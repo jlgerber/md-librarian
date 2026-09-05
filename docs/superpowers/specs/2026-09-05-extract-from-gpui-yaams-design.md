@@ -90,7 +90,7 @@ Public surface, unchanged except the constant's value:
 pub const BOOK_PATH_VAR: &str = "MD_LIBRARIAN_PATH";
 pub struct Book { /* root_index, dir_name, title, description, ... */ }
 impl Book { pub fn is_built(&self) -> bool }
-pub enum Entry { Book(Book), Missing(String) }
+pub enum Entry { Book(Book), Missing { title: String } }
 impl Entry { pub fn title(&self) -> &str }
 pub fn roots(cli: &[PathBuf]) -> Vec<PathBuf>;
 pub fn default_root() -> PathBuf;   // $XDG_DATA_HOME/md-librarian/books, else ~/.local/share/md-librarian/books
@@ -255,16 +255,16 @@ Chapters (`book/src/SUMMARY.md`):
 2. `cargo fmt --all --check`
 3. `cargo test --workspace` (no display needed: the webview crate has no tests
    and its examples are not built by `cargo test`).
-4. `mdbook build book` via the `peaceiris/actions-mdbook` action or a cargo
-   install, whichever is faster in practice.
+4. `mdbook build book`, with mdbook installed by the `peaceiris/actions-mdbook`
+   action (a prebuilt binary; `cargo install mdbook` would dominate the run).
 
 ## Error handling
 
 Unchanged from the source. Discovery logs and skips a missing root; the server
 returns 404 for unknown paths and a dead card for a listed-but-absent title; the
-CLI exits non-zero if the server cannot bind, and exits 0 with the URL printed
-when the window fails to open (the "serve only" fallback the Wayland workaround
-exists for).
+CLI exits non-zero if the server cannot bind; if the window cannot be opened it
+logs the error, prints the URL, and keeps serving (the "serve only" fallback the
+Wayland workaround exists for).
 
 ## Testing and verification
 
