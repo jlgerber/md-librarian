@@ -1,5 +1,7 @@
 //! Discovery for a **library of mdbooks**: where books live, how one is
-//! recognised, and which copy wins when two claim the same title.
+//! recognised, and which copy wins when two claim the same title, and whether
+//! a book is stale relative to its sources ([`Book::is_stale`]), which is what
+//! `md-librarian build` asks.
 //!
 //! This crate is deliberately pure — no server, no window, no gpui. It answers
 //! "what books are installed on this machine, right now?" and nothing else.
@@ -58,6 +60,9 @@ const COVER_EXTS: [&str; 5] = ["png", "svg", "jpg", "jpeg", "webp"];
 /// mdbook's default output directory, used when `book.toml` sets no `build-dir`.
 const DEFAULT_BUILD_DIR: &str = "book";
 
+/// mdbook's default source directory, used when `book.toml` sets no `[book] src`.
+const DEFAULT_SRC_DIR: &str = "src";
+
 /// One discovered book.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Book {
@@ -96,6 +101,9 @@ pub struct Book {
     /// what is installed, so both are kept and the renderer shows the directory
     /// name to tell them apart.
     pub ambiguous: bool,
+    /// The source directory: `dir` joined with `[book] src` (default `src`).
+    /// Private because it is derived; read it through [`Book::src_dir`].
+    src: PathBuf,
 }
 
 impl Book {
@@ -105,6 +113,54 @@ impl Book {
     /// opens a 404 in a window with no back button (see `book/src/docs-window.md`).
     pub fn is_built(&self) -> bool {
         self.build_dir.join("index.html").is_file()
+    }
+
+    /// The source directory: `dir` joined with `[book] src`, default `src`.
+    pub fn src_dir(&self) -> PathBuf {
+        self.src.clone()
+    }
+
+    /// The newest modification time among the build inputs: `book.toml`,
+    /// every file under [`Book::src_dir`], and every file under `dir/theme`
+    /// if it exists.
+    ///
+    /// Never descends into `build_dir`, so a build-dir placed inside `src`
+    /// cannot make a book its own newest input. An unreadable input is skipped
+    /// at debug level rather than failing: a permission problem should not
+    /// turn a whole library into "stale". `None` when nothing was readable.
+    pub fn newest_input(&self) -> Option<std::time::SystemTime> {
+        let mut newest: Option<std::time::SystemTime> = None;
+        let mut consider = |path: &Path| match std::fs::metadata(path).and_then(|m| m.modified()) {
+            Ok(m) => newest = Some(newest.map_or(m, |n| n.max(m))),
+            Err(e) => {
+                tracing::debug!(path = %path.display(), error = %e, "input unreadable; ignored")
+            }
+        };
+        consider(&self.dir.join("book.toml"));
+        for top in [self.src_dir(), self.dir.join("theme")] {
+            if top.is_dir() {
+                walk_files(&top, &self.build_dir, &mut consider);
+            }
+        }
+        newest
+    }
+
+    /// Whether a build is needed: not built, or an input is newer than the
+    /// rendered `index.html`. Equal times are up to date, and a built book
+    /// with no readable inputs is up to date.
+    pub fn is_stale(&self) -> bool {
+        if !self.is_built() {
+            return true;
+        }
+        let built_at =
+            match std::fs::metadata(self.build_dir.join("index.html")).and_then(|m| m.modified()) {
+                Ok(t) => t,
+                Err(_) => return true,
+            };
+        match self.newest_input() {
+            Some(input) => input > built_at,
+            None => false,
+        }
     }
 }
 
@@ -250,7 +306,7 @@ pub fn book_at(roots: &[PathBuf], root_index: usize, dir_name: &str) -> Option<B
     if !dir.join("book.toml").is_file() {
         return None;
     }
-    Some(read_book(&dir, root_index))
+    Some(read_book_in_root(&dir, root_index))
 }
 
 /// Every book directly under one root, in directory order, with `ambiguous` set.
@@ -269,7 +325,10 @@ pub fn discover_root(root: &Path, index: usize) -> Vec<Book> {
     // but two same-titled books in one root must keep a stable relative order.
     dirs.sort();
 
-    let mut books: Vec<Book> = dirs.into_iter().map(|dir| read_book(&dir, index)).collect();
+    let mut books: Vec<Book> = dirs
+        .into_iter()
+        .map(|dir| read_book_in_root(&dir, index))
+        .collect();
 
     // Mark titles that appear more than once in THIS root.
     let mut counts: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
@@ -287,8 +346,19 @@ pub fn discover_root(root: &Path, index: usize) -> Vec<Book> {
     books
 }
 
+/// Read one book directory directly, outside any root.
+///
+/// `None` unless `dir/book.toml` is a file. The book is read exactly as a root
+/// entry would be (title fallback, `build-dir`, cover, `src`), with
+/// `root_index` 0 and `ambiguous` false — there is no root to be ambiguous in.
+pub fn read_book(dir: &Path) -> Option<Book> {
+    dir.join("book.toml")
+        .is_file()
+        .then(|| read_book_in_root(dir, 0))
+}
+
 /// Read one book directory into a [`Book`].
-fn read_book(dir: &Path, root_index: usize) -> Book {
+fn read_book_in_root(dir: &Path, root_index: usize) -> Book {
     let dir_name = dir
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
@@ -316,18 +386,20 @@ fn read_book(dir: &Path, root_index: usize) -> Book {
         cover,
         root_index,
         ambiguous: false,
+        src: dir.join(meta.src.as_deref().unwrap_or(DEFAULT_SRC_DIR)),
     }
 }
 
-/// The three keys read out of a `book.toml`.
+/// The four keys read out of a `book.toml`.
 #[derive(Default)]
 struct Meta {
     title: Option<String>,
     description: Option<String>,
     build_dir: Option<String>,
+    src: Option<String>,
 }
 
-/// Parse `book.toml` for `[book] title`/`description` and `[build] build-dir`.
+/// Parse `book.toml` for `[book] title`/`description`/`src` and `[build] build-dir`.
 ///
 /// A malformed or minimal file yields defaults rather than dropping the book:
 /// the directory holds a `book.toml`, so it *is* a book, and reporting it under
@@ -351,6 +423,26 @@ fn read_meta(path: &Path) -> Meta {
         title: str_at("book", "title"),
         description: str_at("book", "description"),
         build_dir: str_at("build", "build-dir").filter(|s| !s.is_empty()),
+        src: str_at("book", "src").filter(|s| !s.is_empty()),
+    }
+}
+
+/// Call `f` on every file under `dir`, recursively, never entering `skip`.
+fn walk_files(dir: &Path, skip: &Path, f: &mut impl FnMut(&Path)) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        tracing::debug!(dir = %dir.display(), "directory unreadable; ignored");
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path == skip {
+            continue;
+        }
+        if path.is_dir() {
+            walk_files(&path, skip, f);
+        } else {
+            f(&path);
+        }
     }
 }
 
@@ -375,6 +467,156 @@ mod tests {
 
     fn titles(entries: &[Entry]) -> Vec<&str> {
         entries.iter().map(Entry::title).collect()
+    }
+
+    use std::time::{Duration, SystemTime};
+
+    /// A fixed instant so tests never depend on the wall clock.
+    fn t0() -> SystemTime {
+        SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000)
+    }
+
+    /// Set a file's mtime (directories cannot be opened for writing on Linux,
+    /// so only files are stamped; `newest_input` only looks at files).
+    fn stamp(path: &Path, at: SystemTime) {
+        std::fs::File::options()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_modified(at)
+            .unwrap();
+    }
+
+    fn write(path: &Path, body: &str, at: SystemTime) {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, body).unwrap();
+        stamp(path, at);
+    }
+
+    #[test]
+    fn read_book_needs_a_book_toml() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(tmp.path().join("plain")).unwrap();
+        assert!(read_book(&tmp.path().join("plain")).is_none());
+        let dir = book(tmp.path(), "guide", "[book]\ntitle = \"Guide\"\n");
+        let b = read_book(&dir).expect("a book.toml makes a book");
+        assert_eq!(b.title, "Guide");
+        assert_eq!(b.dir_name, "guide");
+        assert_eq!(b.root_index, 0);
+    }
+
+    #[test]
+    fn src_dir_honours_book_src_and_defaults_to_src() {
+        let tmp = tempfile::tempdir().unwrap();
+        let a = book(tmp.path(), "a", "[book]\ntitle = \"A\"\nsrc = \"docs\"\n");
+        let b = book(tmp.path(), "b", "[book]\ntitle = \"B\"\n");
+        assert_eq!(read_book(&a).unwrap().src_dir(), a.join("docs"));
+        assert_eq!(read_book(&b).unwrap().src_dir(), b.join("src"));
+    }
+
+    #[test]
+    fn newest_input_covers_toml_src_and_theme_but_never_the_build_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        // build-dir deliberately INSIDE src: the walk must step over it.
+        let dir = book(
+            tmp.path(),
+            "g",
+            "[book]\ntitle = \"G\"\n\n[build]\nbuild-dir = \"src/out\"\n",
+        );
+        stamp(&dir.join("book.toml"), t0());
+        write(
+            &dir.join("src/intro.md"),
+            "# hi",
+            t0() + Duration::from_secs(10),
+        );
+        write(
+            &dir.join("theme/x.css"),
+            "b{}",
+            t0() + Duration::from_secs(20),
+        );
+        write(
+            &dir.join("src/out/index.html"),
+            "<h1/>",
+            t0() + Duration::from_secs(999),
+        );
+        let b = read_book(&dir).unwrap();
+        assert_eq!(b.newest_input(), Some(t0() + Duration::from_secs(20)));
+    }
+
+    #[test]
+    fn an_unbuilt_book_is_stale() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = book(tmp.path(), "g", "[book]\ntitle = \"G\"\n");
+        assert!(read_book(&dir).unwrap().is_stale());
+    }
+
+    #[test]
+    fn stale_when_a_source_is_newer_than_index_html() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = book(tmp.path(), "g", "[book]\ntitle = \"G\"\n");
+        stamp(&dir.join("book.toml"), t0());
+        write(
+            &dir.join("book/index.html"),
+            "<h1/>",
+            t0() + Duration::from_secs(10),
+        );
+        write(
+            &dir.join("src/intro.md"),
+            "# hi",
+            t0() + Duration::from_secs(20),
+        );
+        assert!(read_book(&dir).unwrap().is_stale());
+    }
+
+    #[test]
+    fn fresh_when_index_html_is_newer_than_every_input() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = book(tmp.path(), "g", "[book]\ntitle = \"G\"\n");
+        stamp(&dir.join("book.toml"), t0());
+        write(
+            &dir.join("src/intro.md"),
+            "# hi",
+            t0() + Duration::from_secs(10),
+        );
+        write(
+            &dir.join("book/index.html"),
+            "<h1/>",
+            t0() + Duration::from_secs(20),
+        );
+        assert!(!read_book(&dir).unwrap().is_stale());
+    }
+
+    #[test]
+    fn equal_mtimes_are_up_to_date() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = book(tmp.path(), "g", "[book]\ntitle = \"G\"\n");
+        stamp(&dir.join("book.toml"), t0());
+        write(&dir.join("src/intro.md"), "# hi", t0());
+        write(&dir.join("book/index.html"), "<h1/>", t0());
+        assert!(!read_book(&dir).unwrap().is_stale());
+    }
+
+    #[test]
+    fn a_built_book_with_no_readable_inputs_is_up_to_date() {
+        let tmp = tempfile::tempdir().unwrap();
+        // The book directory does not exist at all, so nothing is readable;
+        // only the output does. `newest_input` is None and that means fresh.
+        let out = tmp.path().join("out");
+        write(&out.join("index.html"), "<h1/>", t0());
+        let ghost = tmp.path().join("ghost");
+        let b = Book {
+            title: "Ghost".into(),
+            dir_name: "ghost".into(),
+            dir: ghost.clone(),
+            build_dir: out,
+            description: String::new(),
+            cover: None,
+            root_index: 0,
+            ambiguous: false,
+            src: ghost.join("src"),
+        };
+        assert_eq!(b.newest_input(), None);
+        assert!(!b.is_stale());
     }
 
     #[test]
