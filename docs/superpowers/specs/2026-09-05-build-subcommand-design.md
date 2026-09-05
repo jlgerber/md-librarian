@@ -108,7 +108,9 @@ impl Book {
 `is_stale` compares against `index.html` because mdbook rewrites every output
 file on each build, so that one file's mtime is the build time. Equal mtimes
 count as up to date. An unreadable input is skipped with a `debug!`, not an
-error: a permission problem should not turn a whole library into "stale".
+error: a permission problem should not turn a whole library into "stale". When
+`newest_input()` is `None` (nothing readable at all), a built book counts as up
+to date; only an unbuilt one is stale.
 
 The existing `is_built()` and every other public item are unchanged.
 
