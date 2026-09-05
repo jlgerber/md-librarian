@@ -27,6 +27,12 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      # `md-librarian build` shells out to mdbook; its end-to-end tests skip
+      # without it, and CI must not skip them.
+      - uses: peaceiris/actions-mdbook@v2
+        with:
+          mdbook-version: latest
+
       - name: fmt
         run: cargo fmt --all --check
 

@@ -56,6 +56,56 @@ Note the deliberate contrast with yaams-tk2's `YAAMS_BOOKS_DIR`, which names a
 *single* directory: `_PATH` is a list, `_DIR` is one. The suffix is the
 cardinality, so a machine mid-migration can carry both without confusion.
 
+## Building the library
+
+`md-librarian build` runs `mdbook build` on every book the library would show
+that is **stale**: not built, or with `book.toml`, anything under its source
+directory (`[book] src`, default `src`), or anything under `theme/` newer than
+the rendered `index.html`. The build directory itself is never an input, so a
+`build-dir` inside `src` cannot make a book its own newest change. Equal
+times count as up to date, so a second run does nothing and is cheap enough
+for a rez build or a shell hook.
+
+```sh
+md-librarian build                            # every stale book on the roots
+md-librarian build --root ~/books --force     # explicit roots; rebuild all
+md-librarian build --include "User Guide"     # only these titles
+md-librarian build ~/src/foo/docs             # one book, wherever it lives
+```
+
+Selection is discovery's: the same roots, the same first-root-wins shadowing,
+the same `--include` filter. A shadowed copy in a later root is not built.
+
+`mdbook` is **yours**: the one on `PATH`, with its version and its
+preprocessors. The viewer never links mdbook. Without one, `build` stops
+before touching anything and says `cargo install mdbook`.
+
+A book that fails to build is logged and the run continues; the summary line
+`built N, up to date M, failed K` ends every run, and the exit code is `1`
+when `K` is not zero.
+
+### Installing into a root
+
+```sh
+md-librarian build ~/src/foo/docs ~/src/bar/docs --into ~/books
+```
+
+`--into` copies each built book into `ROOT/<directory name>/` as a **slim
+copy**: `book.toml`, the cover if there is one, and the rendered output at the
+same relative `build-dir` path, so the copied `book.toml` still points at it.
+No sources. The copy happens only when the source's `index.html` is newer
+than the destination's, and it is a replace, so chapters deleted at the
+source do not linger.
+
+Three things it refuses, each logged for that book while the run continues:
+
+- a `build-dir` that is absolute or climbs out of the book directory, because
+  the relative layout cannot be reproduced;
+- a destination that exists without a `book.toml`, because it is not something
+  this tool made and will not be deleted;
+- a destination that *is* the source, which is skipped — building in place
+  already did the work.
+
 ## Identity is the title
 
 A book is identified by its **`[book] title`**, falling back to the **directory

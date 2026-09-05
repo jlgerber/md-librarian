@@ -23,6 +23,10 @@ Extracted from gpui-yaams at v0.27.0-beta.3; usdlite and yaams-tk2 consume it.
   `md-librarian-serve` are display-free by construction; that is what lets
   their tests run headless and lets an application depend on discovery without
   paying for WebKit. Do not add the webview crate as a dependency of either.
+- **Only `md-librarian-cli` spawns processes.** `md-librarian build` shells
+  out to the user's `mdbook`; discovery answers "is this stale?" as a pure
+  filesystem question and must stay that way, so an application can ask it
+  without side effects.
 - **Wayland explicit-sync.** On some driver/compositor combinations every
   WebKitGTK window dies with `Error 71 (Protocol error)`. `just run` and the
   rez package default `WEBKIT_DISABLE_DMABUF_RENDERER=1` (guarded, so an

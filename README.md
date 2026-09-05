@@ -18,6 +18,7 @@ as a separate process, and any book installed on the machine shows up.
 ```sh
 cargo install --path crates/md-librarian-cli      # needs WebKitGTK, see Building
 mkdir -p ~/books && cp -r ~/src/my-book ~/books/  # a book with its build output inside
+md-librarian build ~/src/my-book --into ~/books   # or let it build and install the book
 MD_LIBRARIAN_PATH=~/books md-librarian
 ```
 
@@ -81,6 +82,8 @@ md-librarian --root ~/books --root /opt/books # explicit roots; the first wins
 md-librarian --include "User Guide"           # only these titles
 md-librarian --book "User Guide"              # open straight onto one book
 md-librarian --no-window                      # serve only; prints the URL
+md-librarian build                            # mdbook-build every stale book on the roots
+md-librarian build ~/src/foo/docs --into ~/books   # build one book, install a slim copy
 ```
 
 | Flag | Effect |
@@ -91,6 +94,12 @@ md-librarian --no-window                      # serve only; prints the URL
 | `--no-window` | Serve without a window and print the URL. For headless machines, `ssh -L`, or driving the pages from a normal browser. |
 | `--exit-on-stdin-close` | Exit when stdin reaches EOF, which is how an application ties the viewer's lifetime to its own. |
 | `--parent-pipe <FD>` | Like the above, watching an inherited pipe instead of stdin. |
+
+`build` takes optional book directories, the same `--root` and `--include`,
+plus `--force` (rebuild everything) and `--into <ROOT>` (install a slim copy
+of each book: `book.toml`, cover, rendered output). It needs `mdbook` on
+`PATH`. The [library chapter](book/src/library.md#building-the-library) has
+the staleness rule and what `--into` refuses.
 
 ## Building
 
