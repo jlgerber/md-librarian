@@ -1,0 +1,25 @@
+[package]
+name = "md-librarian-cli"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "The `md-librarian` binary: serves a library of mdbooks and opens a window on it. The only crate that depends on md-librarian-webview, so the library crates stay free of wry/tao/GTK."
+
+[[bin]]
+name = "md-librarian"
+path = "src/main.rs"
+# The lib crate is also called md-librarian; keep `cargo doc --workspace`
+# from writing both into target/doc/md_librarian/.
+doc = false
+
+[dependencies]
+md-librarian = { path = "../md-librarian" }
+md-librarian-serve = { path = "../md-librarian-serve" }
+md-librarian-webview = { path = "../md-librarian-webview" }
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

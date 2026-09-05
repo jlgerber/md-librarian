@@ -1,0 +1,16 @@
+[package]
+name = "md-librarian"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "Discovery for a library of mdbooks: repository roots on a stacking search path, title identity, shadowing, filtering and covers. Pure — no server, no window."
+
+[dependencies]
+toml = "0.8"
+tracing = "0.1"
+
+[dev-dependencies]
+tempfile = "3"

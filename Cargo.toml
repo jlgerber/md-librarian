@@ -1,0 +1,15 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/md-librarian",
+    "crates/md-librarian-serve",
+    "crates/md-librarian-webview",
+    "crates/md-librarian-cli",
+]
+
+[workspace.package]
+edition = "2024"
+version = "0.1.0"
+license = "MIT"
+authors = ["Jonathan Gerber <jlgerber@gmail.com>"]
+repository = "https://github.com/jlgerber/md-librarian"

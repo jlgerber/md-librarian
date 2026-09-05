@@ -1,0 +1,27 @@
+[package]
+name = "md-librarian-webview"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "Floating WebKit (wry) window driven from any Rust app — help/docs rendering without an external browser"
+
+[dependencies]
+anyhow = "1"
+# Still no direct `gtk` dependency. v0.22.3 named one (tao and wry both pull
+# gtk 0.18 anyway, so it cost nothing) purely to finish the GTK teardown by
+# hand once the per-window event loop had stopped iterating. The shared loop
+# of 0.23.0 never stops iterating, so GDK flushes the destroy itself and no
+# code here touches GTK widgets any more.
+#
+# `glib` IS named, as of 0.23.2, for exactly one thing: the bounded
+# first-paint fallback (#47) is a timer that has to live on the GTK thread's
+# own main loop, and `glib::timeout_add_local_once` is that timer. It is the
+# same glib 0.18 tao and wry already pull in, so it adds no crate to the
+# build — only an edge that says so out loud instead of borrowing someone
+# else's re-export.
+glib = "0.18"
+tao = "0.34"
+wry = "0.53"

@@ -1,0 +1,18 @@
+[package]
+name = "md-librarian-serve"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "Serves a library of mdbooks over a loopback HTTP origin: a generated card page, a persistent bar over an iframe, and the books themselves. Server only — the window lives in the `md-librarian` binary."
+
+[dependencies]
+md-librarian = { path = "../md-librarian" }
+anyhow = "1"
+tiny_http = "0.12"
+tracing = "0.1"
+
+[dev-dependencies]
+tempfile = "3"
