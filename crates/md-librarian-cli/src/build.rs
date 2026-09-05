@@ -5,6 +5,7 @@
 //! `mdbook` is the user's own, found on PATH and run as a subprocess; this
 //! binary never links it.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use clap::Args;
@@ -23,7 +24,7 @@ pub struct BuildArgs {
     pub root: Vec<PathBuf>,
 
     /// Only these book titles; repeatable. A title no root provides is a
-    /// warning, not a failure.
+    /// warning, not a failure. Ignored when DIR is given.
     #[arg(long, value_name = "TITLE")]
     pub include: Vec<String>,
 
@@ -75,6 +76,8 @@ pub fn run(args: BuildArgs) -> anyhow::Result<i32> {
     let mdbook = which_mdbook()?;
     let books = select(&args);
     let (mut built, mut up_to_date, mut failed) = (0u32, 0u32, 0u32);
+    // Destination -> the title that claimed it, for the collision check below.
+    let mut taken: HashMap<PathBuf, String> = HashMap::new();
     for book in &books {
         if !args.force && !book.is_stale() {
             tracing::info!(title = %book.title, "up to date");
@@ -93,14 +96,30 @@ pub fn run(args: BuildArgs) -> anyhow::Result<i32> {
             }
         }
         if let Some(root) = &args.into {
+            // Two books can share a directory name (`a/docs` and `b/docs`) and
+            // so want the same destination. The first one there keeps it: a
+            // silent overwrite would report both as installed while only one
+            // survived.
+            let dest = destination(root, book);
+            if let Some(earlier) = taken.get(&dest) {
+                tracing::error!(
+                    title = %book.title,
+                    dest = %dest.display(),
+                    "not installed: {earlier} was already installed to this destination"
+                );
+                continue;
+            }
             match install(book, root) {
                 Ok(Installed::Copied) => {
+                    taken.insert(dest, book.title.clone());
                     tracing::info!(title = %book.title, root = %root.display(), "installed")
                 }
                 Ok(Installed::UpToDate) => {
+                    taken.insert(dest, book.title.clone());
                     tracing::debug!(title = %book.title, "install up to date")
                 }
                 Ok(Installed::SameDir) => {
+                    taken.insert(dest, book.title.clone());
                     tracing::debug!(title = %book.title, "already in that root")
                 }
                 Ok(Installed::Refused(why)) => {
@@ -120,6 +139,11 @@ pub fn run(args: BuildArgs) -> anyhow::Result<i32> {
 /// `mdbook` in a PATH-shaped list of directories, if present.
 pub fn find_mdbook_in(path: &std::ffi::OsStr) -> Option<PathBuf> {
     std::env::split_paths(path)
+        // An empty entry (leading, trailing or doubled `:`) means "the current
+        // directory" to a shell, and joining it yields the bare relative
+        // `mdbook` — so a `./mdbook` in whatever directory the user happens to
+        // be in would be executed. Never that.
+        .filter(|dir| !dir.as_os_str().is_empty())
         .map(|dir| dir.join("mdbook"))
         .find(|p| p.is_file())
 }
@@ -166,6 +190,26 @@ pub enum Installed {
 /// linger. `Err` is an I/O failure; policy refusals come back as
 /// [`Installed::Refused`] so the caller can log them without failing the run.
 pub fn install(book: &Book, root: &Path) -> anyhow::Result<Installed> {
+    // A usable directory name comes first, because everything below is
+    // relative to `dest`: an empty name (what `read_book` used to hand back
+    // for `.`) collapses `dest` onto ROOT itself, and ROOT's own book.toml
+    // would then satisfy the gate in front of `remove_dir_all`.
+    if !usable_dir_name(&book.dir_name) {
+        return Ok(Installed::Refused(format!(
+            "cannot install {}: it has no usable directory name",
+            book.dir.display()
+        )));
+    }
+    let dest = destination(root, book);
+
+    // Already living in that root: building in place was the whole job. Ahead
+    // of the build-dir refusals below, so a book with an escaping build-dir
+    // that is *already* where it belongs is skipped silently instead of
+    // logging an error on every run.
+    if same_dir(&dest, &book.dir) {
+        return Ok(Installed::SameDir);
+    }
+
     let Ok(rel) = book.build_dir.strip_prefix(&book.dir) else {
         return Ok(Installed::Refused(format!(
             "build-dir {} is not inside the book directory; the layout cannot be preserved",
@@ -182,9 +226,16 @@ pub fn install(book: &Book, root: &Path) -> anyhow::Result<Installed> {
         )));
     }
     std::fs::create_dir_all(root)?;
-    let dest = root.join(&book.dir_name);
-    if same_dir(&dest, &book.dir) {
-        return Ok(Installed::SameDir);
+
+    // "Not ours" is decided before the up-to-date shortcut: a destination that
+    // happens to hold a newer `<rel>/index.html` but no book.toml must be
+    // refused, not quietly reported up to date.
+    let existing = dest.exists();
+    if existing && !dest.join("book.toml").is_file() {
+        return Ok(Installed::Refused(format!(
+            "{} exists but holds no book.toml; not replacing something this tool did not make",
+            dest.display()
+        )));
     }
 
     let mtime = |p: &Path| std::fs::metadata(p).and_then(|m| m.modified()).ok();
@@ -195,13 +246,7 @@ pub fn install(book: &Book, root: &Path) -> anyhow::Result<Installed> {
         }
     }
 
-    if dest.exists() {
-        if !dest.join("book.toml").is_file() {
-            return Ok(Installed::Refused(format!(
-                "{} exists but holds no book.toml; not replacing something this tool did not make",
-                dest.display()
-            )));
-        }
+    if existing {
         std::fs::remove_dir_all(&dest)?;
     }
     std::fs::create_dir_all(&dest)?;
@@ -213,6 +258,23 @@ pub fn install(book: &Book, root: &Path) -> anyhow::Result<Installed> {
     }
     copy_tree(&book.build_dir, &dest.join(rel))?;
     Ok(Installed::Copied)
+}
+
+/// Where a book installs under `root`. The one place that decision is made, so
+/// the collision check in [`run`] and [`install`] cannot disagree about it.
+fn destination(root: &Path, book: &Book) -> PathBuf {
+    root.join(&book.dir_name)
+}
+
+/// Whether a directory name can safely be joined onto a root: exactly one
+/// component, and not one that means "somewhere else".
+fn usable_dir_name(name: &str) -> bool {
+    !(name.is_empty()
+        || name == "."
+        || name == ".."
+        || name.contains('/')
+        || name.contains('\\')
+        || name.contains('\0'))
 }
 
 /// Whether two paths name the same existing directory (`dest` may not exist).
@@ -300,6 +362,11 @@ mod tests {
     #[test]
     fn find_mdbook_in_an_empty_path_is_none() {
         assert_eq!(find_mdbook_in(std::ffi::OsStr::new("")), None);
+        assert_eq!(
+            find_mdbook_in(std::ffi::OsStr::new(":")),
+            None,
+            "an empty PATH entry means the cwd; ./mdbook must never be run"
+        );
         let tmp = tempfile::tempdir().unwrap();
         assert_eq!(find_mdbook_in(tmp.path().as_os_str()), None);
         std::fs::write(tmp.path().join("mdbook"), "").unwrap();
@@ -394,6 +461,53 @@ mod tests {
             root.path().join("g/precious").is_dir(),
             "nothing was deleted"
         );
+    }
+
+    #[test]
+    fn install_refuses_a_non_book_destination_even_if_it_has_an_index() {
+        let src = tempfile::tempdir().unwrap();
+        let dir = book(src.path(), "g", "[book]\ntitle = \"G\"\n");
+        built(&dir, "book", "<h1>ours</h1>");
+        let b = md_librarian::read_book(&dir).unwrap();
+        let root = tempfile::tempdir().unwrap();
+        // A newer index.html, but no book.toml: not ours to replace, and the
+        // mtime shortcut must not report it up to date either.
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        built(&root.path().join("g"), "book", "<h1>theirs</h1>");
+        match install(&b, root.path()).unwrap() {
+            Installed::Refused(why) => assert!(why.contains("book.toml"), "{why}"),
+            other => panic!("expected Refused, got {other:?}"),
+        }
+        assert_eq!(
+            std::fs::read_to_string(root.path().join("g/book/index.html")).unwrap(),
+            "<h1>theirs</h1>",
+            "nothing was touched"
+        );
+    }
+
+    #[test]
+    fn install_refuses_a_book_with_no_directory_name() {
+        let src = tempfile::tempdir().unwrap();
+        let dir = book(src.path(), "g", "[book]\ntitle = \"G\"\n");
+        built(&dir, "book", "<h1/>");
+        let mut b = md_librarian::read_book(&dir).unwrap();
+        // What `read_book(".")` used to produce: `dest` collapses to ROOT, and
+        // ROOT's own book.toml then satisfies the gate before remove_dir_all.
+        b.dir_name = String::new();
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("book.toml"), "[book]\ntitle = \"Root\"\n").unwrap();
+        std::fs::create_dir_all(root.path().join("precious")).unwrap();
+        std::fs::write(root.path().join("precious/keep.txt"), "keep").unwrap();
+
+        match install(&b, root.path()).unwrap() {
+            Installed::Refused(why) => assert!(why.contains("directory name"), "{why}"),
+            other => panic!("expected Refused, got {other:?}"),
+        }
+        assert!(
+            root.path().join("precious/keep.txt").is_file(),
+            "the root must survive"
+        );
+        assert!(root.path().join("book.toml").is_file());
     }
 
     #[test]

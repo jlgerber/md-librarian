@@ -348,13 +348,24 @@ pub fn discover_root(root: &Path, index: usize) -> Vec<Book> {
 
 /// Read one book directory directly, outside any root.
 ///
-/// `None` unless `dir/book.toml` is a file. The book is read exactly as a root
-/// entry would be (title fallback, `build-dir`, cover, `src`), with
-/// `root_index` 0 and `ambiguous` false — there is no root to be ambiguous in.
+/// `None` unless `dir/book.toml` is a file, or unless `dir` cannot be
+/// canonicalised.
+///
+/// The argument is **canonicalised first**, because this is the entry point a
+/// user's own path reaches: `.`, `..` and a trailing separator all leave
+/// `Path::file_name()` None, and a [`Book`] with an empty [`Book::dir_name`]
+/// makes `root.join(&book.dir_name)` collapse onto the root itself. That is how
+/// `md-librarian build . --into ROOT` came to replace ROOT. [`discover_root`]
+/// needs no such care: its entries come from `read_dir` and already have names.
+///
+/// The book is otherwise read exactly as a root entry would be (title fallback,
+/// `build-dir`, cover, `src`), with `root_index` 0 and `ambiguous` false —
+/// there is no root to be ambiguous in.
 pub fn read_book(dir: &Path) -> Option<Book> {
+    let dir = std::fs::canonicalize(dir).ok()?;
     dir.join("book.toml")
         .is_file()
-        .then(|| read_book_in_root(dir, 0))
+        .then(|| read_book_in_root(&dir, 0))
 }
 
 /// Read one book directory into a [`Book`].
@@ -503,6 +514,36 @@ mod tests {
         assert_eq!(b.title, "Guide");
         assert_eq!(b.dir_name, "guide");
         assert_eq!(b.root_index, 0);
+    }
+
+    #[test]
+    fn read_book_of_dot_has_the_real_directory_name() {
+        // `Path::file_name()` is None for `.`, `..` and a trailing `/`, so an
+        // un-canonicalised read leaves `dir_name` empty — and an empty
+        // dir_name makes `root.join(&book.dir_name)` resolve to the root
+        // itself, which `md-librarian build . --into ROOT` would then replace.
+        let tmp = tempfile::tempdir().unwrap();
+        book(tmp.path(), "mybook", "[book]\ntitle = \"My Book\"\n");
+        for path in [
+            tmp.path().join("mybook/."),
+            tmp.path().join("mybook/../mybook"),
+        ] {
+            let b = read_book(&path).expect("still a book");
+            assert_eq!(b.dir_name, "mybook", "for {}", path.display());
+            assert!(b.dir.is_absolute(), "for {}", b.dir.display());
+        }
+        // `Path::components` normalises an interior `.` away, so the two forms
+        // above already name the directory; a path *ending* in `..` is the one
+        // that leaves `file_name()` None, exactly as a bare `.` does.
+        std::fs::create_dir_all(tmp.path().join("mybook/src")).unwrap();
+        let b = read_book(&tmp.path().join("mybook/src/..")).expect("still a book");
+        assert_eq!(b.dir_name, "mybook");
+        assert!(b.dir.is_absolute(), "for {}", b.dir.display());
+
+        assert!(
+            read_book(&tmp.path().join("nope/.")).is_none(),
+            "a directory that does not exist is not a book"
+        );
     }
 
     #[test]

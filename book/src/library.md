@@ -80,8 +80,10 @@ the same `--include` filter. A shadowed copy in a later root is not built.
 preprocessors. The viewer never links mdbook. Without one, `build` stops
 before touching anything and says `cargo install mdbook`.
 
-A book that fails to build is logged and the run continues; the summary line
-`built N, up to date M, failed K` ends every run, and the exit code is `1`
+A book that fails to build is logged and the run continues. Every run ends
+with the summary line `built N, up to date M, failed K`, where `K` counts a
+book that failed to build *or* whose `--into` install hit an I/O error; a
+refused install (see below) is logged but does not count. The exit code is `1`
 when `K` is not zero.
 
 ### Installing into a root
@@ -95,16 +97,28 @@ copy**: `book.toml`, the cover if there is one, and the rendered output at the
 same relative `build-dir` path, so the copied `book.toml` still points at it.
 No sources. The copy happens only when the source's `index.html` is newer
 than the destination's, and it is a replace, so chapters deleted at the
-source do not linger.
+source do not linger. A changed cover on its own does not trigger a copy,
+because the cover is not a build input; pass `--force` to refresh it.
 
-Three things it refuses, each logged for that book while the run continues:
+What it refuses, each logged for that book while the run continues and none of
+them counted in `failed`:
 
+- a book with no usable directory name — one that is empty, `.`, `..`, or that
+  holds a path separator — because `ROOT/<that>` is not a directory *under* the
+  root;
 - a `build-dir` that is absolute or climbs out of the book directory, because
   the relative layout cannot be reproduced;
 - a destination that exists without a `book.toml`, because it is not something
-  this tool made and will not be deleted;
+  this tool made and will not be deleted — checked before the up-to-date
+  comparison, so a stranger's `index.html` is never mistaken for ours;
+- a second book wanting a destination an earlier book in the same run already
+  took (`build a/docs b/docs --into ROOT`: both want `ROOT/docs`), because the
+  later one would silently replace the earlier;
 - a destination that *is* the source, which is skipped — building in place
   already did the work.
+
+Directory arguments are resolved before any of this, so `md-librarian build .`
+installs under the real name of the directory you are standing in.
 
 ## Identity is the title
 

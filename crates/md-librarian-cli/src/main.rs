@@ -23,6 +23,10 @@ use clap::{Parser, Subcommand};
 
 #[derive(Parser, Debug)]
 #[command(
+    // The serve flags are flattened at the top level, so `--root X build`
+    // would parse `--root` into `cli.serve` and hand `build` an empty one:
+    // a silent no-op reporting `built 0`. Clap can say so instead.
+    args_conflicts_with_subcommands = true,
     about = "Browse a library of mdbooks",
     long_about = "Serves every book found on the search path and opens a window on the library.\n\n\
                   Roots come from --root, else MD_LIBRARIAN_PATH (a stacking, colon-separated \

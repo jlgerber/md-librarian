@@ -197,3 +197,119 @@ fn build_into_installs_a_slim_copy() {
     assert!(err.contains("built 0, up to date 1, failed 0"), "{err}");
     assert!(!err.contains("installed"), "{err}");
 }
+
+/// A root that must survive whatever `--into` does: its own `book.toml` (which
+/// is what made the old `dest == ROOT` bug pass the "is this ours?" gate) and a
+/// file nothing in this tool ever writes.
+fn precious_root(tmp: &Path) -> PathBuf {
+    let lib = tmp.join("lib");
+    std::fs::create_dir_all(lib.join("precious")).unwrap();
+    std::fs::write(lib.join("book.toml"), "[book]\ntitle = \"Root\"\n").unwrap();
+    std::fs::write(lib.join("precious/keep.txt"), "keep me").unwrap();
+    lib
+}
+
+#[test]
+fn build_dot_into_installs_under_the_real_name_and_never_touches_root() {
+    if !mdbook_on_path() {
+        eprintln!("skipping: mdbook not on PATH");
+        return;
+    }
+    let tmp = tempfile::tempdir().unwrap();
+    let mybook = fixture(tmp.path(), "mybook", "My Book");
+    let lib = precious_root(tmp.path());
+
+    let out = bin()
+        .current_dir(&mybook)
+        .args(["build", "."])
+        .arg("--into")
+        .arg(&lib)
+        .output()
+        .unwrap();
+    let err = String::from_utf8(out.stderr).unwrap();
+    assert!(out.status.success(), "{err}");
+    assert!(lib.join("mybook/book.toml").is_file(), "{err}");
+    assert!(lib.join("mybook/book/index.html").is_file(), "{err}");
+    assert!(
+        lib.join("precious/keep.txt").is_file(),
+        "the root was eaten: {err}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(lib.join("book.toml")).unwrap(),
+        "[book]\ntitle = \"Root\"\n",
+        "the root's own book.toml was replaced: {err}"
+    );
+}
+
+#[test]
+fn serve_flags_before_build_are_an_error() {
+    let tmp = tempfile::tempdir().unwrap();
+    fixture(tmp.path(), "guide", "Guide");
+    let out = bin()
+        .arg("--root")
+        .arg(tmp.path())
+        .arg("build")
+        .output()
+        .unwrap();
+    let err = String::from_utf8(out.stderr).unwrap();
+    assert!(
+        !out.status.success(),
+        "serve flags before `build` silently did nothing: {err}"
+    );
+    assert!(
+        !err.contains("built 0"),
+        "the run must not proceed as an empty build: {err}"
+    );
+
+    // The same flags without a subcommand are still the serve path. It parks
+    // forever once it is up, so it is spawned and killed: staying alive is
+    // exactly the proof that clap accepted the flags.
+    let mut child = bin()
+        .arg("--root")
+        .arg(tmp.path())
+        .arg("--no-window")
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(750));
+    let exited = child.try_wait().unwrap();
+    let _ = child.kill();
+    let _ = child.wait();
+    assert!(
+        exited.is_none(),
+        "--root with no subcommand must still serve, but it exited: {exited:?}"
+    );
+}
+
+#[test]
+fn two_books_with_the_same_dir_name_do_not_overwrite_each_other_under_into() {
+    if !mdbook_on_path() {
+        eprintln!("skipping: mdbook not on PATH");
+        return;
+    }
+    let tmp = tempfile::tempdir().unwrap();
+    let a = fixture(tmp.path(), "a/docs", "A");
+    let b = fixture(tmp.path(), "b/docs", "B");
+    let lib = tmp.path().join("lib");
+
+    let out = bin()
+        .arg("build")
+        .arg(&a)
+        .arg(&b)
+        .arg("--into")
+        .arg(&lib)
+        .output()
+        .unwrap();
+    let err = String::from_utf8(out.stderr).unwrap();
+    assert!(out.status.success(), "a collision is not a failure: {err}");
+    let installed = std::fs::read_to_string(lib.join("docs/book.toml")).unwrap();
+    assert!(
+        installed.contains("title = \"A\""),
+        "the first book must stand: {installed}\n{err}"
+    );
+    assert!(
+        err.contains("already installed") && err.contains("docs"),
+        "the collision must be logged, naming both books: {err}"
+    );
+}
