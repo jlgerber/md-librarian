@@ -14,7 +14,7 @@ Or resolve the rez package, which also ships this book as a root:
 rez env md_librarian -- md-librarian
 ```
 
-The binary needs WebKitGTK at runtime; `--no-window` does not.
+The binary links WebKitGTK, so those libraries must be installed either way; `--no-window` is what removes the need for a *display*.
 
 ## Where books go
 

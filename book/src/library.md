@@ -1,7 +1,8 @@
 # A library of books
 
 `md-librarian` and `md-librarian-serve` turn a directory of mdbooks into a
-browsable library, and `md-librarian` is the standalone viewer that opens it.
+browsable library, and the `md-librarian` binary is the standalone viewer that
+opens it.
 
 This is the answer for **many books, discovered at runtime**. For one app with a
 fixed handful of pages, [Building a documentation window](./docs-window.md) is

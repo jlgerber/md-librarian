@@ -12,7 +12,7 @@ If any of these files don't exist, **proceed silently**. Don't flag their absenc
 Two files in this repo already carry domain knowledge and are worth reading alongside them:
 
 - **`CLAUDE.md`** — the working notes: what each crate is for, the documentation-is-part-of-the-feature rule, and the gotchas.
-- **`book/src/`** — the mdbook, one chapter per concern. It is the public documentation, not a substitute for `CONTEXT.md`: the book explains how to *use* a widget, while `CONTEXT.md` would define the vocabulary the code and issues speak in.
+- **`book/src/`** — the mdbook, one chapter per concern. It is the public documentation, not a substitute for `CONTEXT.md`: the book explains how to *use* the viewer, while `CONTEXT.md` would define the vocabulary the code and issues speak in.
 
 ## File structure
 

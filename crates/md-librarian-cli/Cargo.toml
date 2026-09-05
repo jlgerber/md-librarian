@@ -6,7 +6,7 @@ authors.workspace = true
 license.workspace = true
 repository.workspace = true
 publish = false
-description = "The `md-librarian` binary: serves a library of mdbooks and opens a window on it. The only crate in the workspace that links wry/tao/GTK."
+description = "The `md-librarian` binary: serves a library of mdbooks and opens a window on it. The only crate that depends on md-librarian-webview, so the library crates stay free of wry/tao/GTK."
 
 [[bin]]
 name = "md-librarian"

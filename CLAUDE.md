@@ -19,7 +19,7 @@ Extracted from gpui-yaams at v0.27.0-beta.3; usdlite and yaams-tk2 consume it.
 
 ## Gotchas
 
-- **Only `md-librarian-cli` may link wry/tao/GTK.** `md-librarian` and
+- **Only `md-librarian-webview` and `md-librarian-cli` may link wry/tao/GTK.** `md-librarian` and
   `md-librarian-serve` are display-free by construction; that is what lets
   their tests run headless and lets an application depend on discovery without
   paying for WebKit. Do not add the webview crate as a dependency of either.

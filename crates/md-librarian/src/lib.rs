@@ -4,7 +4,7 @@
 //! This crate is deliberately pure — no server, no window, no gpui. It answers
 //! "what books are installed on this machine, right now?" and nothing else.
 //! [`md-librarian-serve`](../md_librarian_serve/index.html) renders and serves the
-//! answer; see `book/src/books.md` for the whole feature.
+//! answer; see `book/src/library.md` for the whole feature.
 //!
 //! # The shape of a repository
 //!
@@ -77,7 +77,7 @@ pub struct Book {
     /// crate refuses it because it *rebuilds* books and the output would land
     /// inside its staleness walk, making a book its own newest input; this one
     /// only ever serves, so the hazard does not transfer — and honouring it is
-    /// what makes md-librarian' own book (`build-dir = "html"`) discoverable.
+    /// what makes md-librarian's own book (`build-dir = "html"`) discoverable.
     pub build_dir: PathBuf,
     /// `[book] description`, empty when unset. Shown on the card.
     pub description: String,
