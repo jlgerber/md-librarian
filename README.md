@@ -43,6 +43,28 @@ Roots stack and the first one wins, so a user's own copy of a book shadows one
 shipped by a package. A book is identified by its `[book] title`, falling back
 to the directory name.
 
+### Covers
+
+To give a book a cover on the card page, put an image named **`cover.<ext>`**
+beside its `book.toml`, next to `src/`, not inside it:
+
+```text
+my-book/
+├── book.toml
+├── cover.png
+└── src/
+```
+
+The extensions looked for are `png`, `svg`, `jpg`, `jpeg` and `webp`, in that
+order; the first one present wins. The cover lives inside the book rather than
+in a per-root index, so a book copied to another root brings its cover along.
+Nothing goes in `book.toml`: mdbook rejects keys it does not know, so a cover
+cannot be declared there.
+
+A book without a cover gets a generated one, the title's initial on a colour
+derived from the whole title. It is deterministic, so the same book looks the
+same in every library, and adding a book never recolours the others.
+
 ## Command line
 
 ```sh
