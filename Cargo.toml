@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/md-librarian",
     "crates/md-librarian-serve",
+    "crates/md-librarian-webview",
 ]
 
 [workspace.package]
