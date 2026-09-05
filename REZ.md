@@ -26,9 +26,10 @@ their own; they are exercised through the viewer and by the `cargo_test` test.
 Also installed:
 
 - **the book, as a discoverable library root** — rendered fresh by `mdbook build`
-  into `{root}/books/md-librarian/`, with its `book.toml` beside its `html/`
-  output. That layout is what the viewer scans for. Skipped, with a message,
-  when `mdbook` is absent or `MD_LIBRARIAN_SKIP_BOOK=1`.
+  into `{root}/books/md-librarian/`, with its `book.toml` and its `cover.svg`
+  beside its `html/` output. That layout is what the viewer scans for.
+  Skipped, with a message, when `mdbook` is absent or
+  `MD_LIBRARIAN_SKIP_BOOK=1`.
 - **`{root}/scripts/rez-cargo-test.sh`**, which backs the `cargo_test` test.
 
 `commands()` prepends `{root}/bin` to `PATH` and **appends** `{root}/books` to

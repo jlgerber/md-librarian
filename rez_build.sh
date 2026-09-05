@@ -111,14 +111,18 @@ install -m 0755 "$SRC/scripts/rez-cargo-test.sh" "$REZ_BUILD_INSTALL_PATH/script
 # each holding its `book.toml` beside its output — NOT bare HTML: discovery keys
 # on `book.toml`, and the title, description and `build-dir` all come out of it.
 # `build-dir = "html"` in our book.toml is why the output lands in `html/`.
-# package.py APPENDS this root to MD_LIBRARIAN_PATH, so a user's own roots
-# shadow it.
+# The cover is part of the layout too: discovery looks for `cover.<ext>`
+# beside `book.toml`, so it ships beside it here. package.py APPENDS this
+# root to MD_LIBRARIAN_PATH, so a user's own roots shadow it.
 if [ "$ship_book" = "1" ]; then
     mdbook build book
     books_dest="$REZ_BUILD_INSTALL_PATH/books/md-librarian"
     rm -rf "$REZ_BUILD_INSTALL_PATH/books"
     mkdir -p "$books_dest"
     install -m 0644 "$SRC/book/book.toml" "$books_dest/book.toml"
+    for cover in "$SRC"/book/cover.{png,svg,jpg,jpeg,webp}; do
+        [ -f "$cover" ] && install -m 0644 "$cover" "$books_dest/$(basename "$cover")"
+    done
     cp -r "$SRC/book/html" "$books_dest/html"
     echo "rez_build: book shipped as a library root → $books_dest"
 fi
