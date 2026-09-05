@@ -7,3 +7,5 @@
 - [Building a documentation window](./docs-window.md)
 - [Releasing](./releasing.md)
 - [rez packaging](./rez.md)
+- [README](./project-readme.md)
+- [Changelog](./changelog.md)

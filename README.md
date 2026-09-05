@@ -98,7 +98,7 @@ md-librarian build ~/src/foo/docs --into ~/books   # build one book, install a s
 `build` takes optional book directories, the same `--root` and `--include`,
 plus `--force` (rebuild everything) and `--into <ROOT>` (install a slim copy
 of each book: `book.toml`, cover, rendered output). It needs `mdbook` on
-`PATH`. The [library chapter](book/src/library.md#building-the-library) has
+`PATH`. The [library chapter](https://github.com/jlgerber/md-librarian/blob/main/book/src/library.md#building-the-library) has
 the staleness rule and what `--into` refuses.
 
 ## Building
@@ -168,7 +168,7 @@ rez env md_librarian -- md-librarian      # run it from a resolve
 `rez_build.sh` needs `cargo` (via rustup) and, optionally, `mdbook`; without
 mdbook the package is built without the documentation root. Set
 `MD_LIBRARIAN_RUN_TESTS=1` to run the test suite during the build, or
-`MD_LIBRARIAN_SKIP_BOOK=1` to skip the documentation. [REZ.md](REZ.md) covers
+`MD_LIBRARIAN_SKIP_BOOK=1` to skip the documentation. [REZ.md](https://github.com/jlgerber/md-librarian/blob/main/REZ.md) covers
 the rest, including the pre-release versioning trap rez has.
 
 ## Using it from an application
@@ -211,7 +211,7 @@ let installed = library(&roots(&[]), None).into_iter().any(|e| match e {
 });
 ```
 
-The [Getting started](book/src/getting-started.md) chapter has the details.
+The [Getting started](https://github.com/jlgerber/md-librarian/blob/main/book/src/getting-started.md) chapter has the details.
 
 ## Crates
 
@@ -228,11 +228,11 @@ On some Wayland driver and compositor combinations GTK reports
 `Error 71 (Protocol error) dispatching to Wayland display` and every WebKitGTK
 window dies at once. Set `WEBKIT_DISABLE_DMABUF_RENDERER=1`. The justfile and
 the rez package do this for you; the diagnosis is in the
-[library chapter](book/src/library.md#known-issue-the-window-never-appears-wayland--explicit-sync).
+[library chapter](https://github.com/jlgerber/md-librarian/blob/main/book/src/library.md#known-issue-the-window-never-appears-wayland--explicit-sync).
 
 ## Documentation
 
-The full documentation is an mdbook under [`book/`](book/src/SUMMARY.md):
+The full documentation is an mdbook under [`book/`](https://github.com/jlgerber/md-librarian/blob/main/book/src/SUMMARY.md):
 build it with `just docs-build`, or open it in the viewer itself with `just run`.
 
 ## License and provenance
