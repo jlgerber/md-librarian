@@ -1,0 +1,15 @@
+[book]
+title = "md-librarian"
+authors = ["Jonathan Gerber"]
+description = "A library of mdbooks: discovery on a search path, a loopback server with a card page, and a floating WebKit viewer."
+src = "src"
+
+[build]
+# Not cosmetic: discovery honours [build] build-dir, and this repo's own book
+# is the test case for it. The rez package ships this directory as a root.
+build-dir = "html"
+
+[output.html]
+default-theme = "navy"
+preferred-dark-theme = "navy"
+git-repository-url = "https://github.com/jlgerber/md-librarian"
