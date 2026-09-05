@@ -25,7 +25,12 @@ colon-separated, first-wins list), else `$XDG_DATA_HOME/md-librarian/books`.
 ```sh
 mdbook build ~/src/my-book                      # renders into ~/src/my-book/book
 MD_LIBRARIAN_PATH=~/src md-librarian            # ~/src is the root; my-book is found
+
+md-librarian build ~/src/my-book --into ~/books # or: build it and install a slim copy
+MD_LIBRARIAN_PATH=~/books md-librarian          # into a root of your own
 ```
+
+`md-librarian build` with no arguments brings every stale book on the roots up to date; see [Building the library](./library.md#building-the-library).
 
 ## Launching from an application
 

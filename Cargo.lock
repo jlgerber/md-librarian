@@ -1311,6 +1311,7 @@ dependencies = [
  "md-librarian",
  "md-librarian-serve",
  "md-librarian-webview",
+ "tempfile",
  "tracing",
  "tracing-subscriber",
 ]

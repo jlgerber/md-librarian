@@ -14,6 +14,11 @@ consumers pin.
 
 ### Added
 
+- **`md-librarian build`.** Runs `mdbook build` on every stale book on the
+  search path, or on the book directories given; `--force` rebuilds all,
+  `--into <ROOT>` installs a slim copy (`book.toml`, cover, rendered output)
+  into a root. Discovery gains `Book::{src_dir, newest_input, is_stale}` and
+  `read_book(dir)`. mdbook is found on `PATH`, never linked.
 - **Extracted from gpui-yaams v0.27.0-beta.3.** The mdbook library viewer —
   `yaams-booklib`, `yaams-bookserve`, `yaams-webview` and the `yaams-books`
   binary — moves here unchanged in behaviour, renamed:
