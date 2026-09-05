@@ -156,3 +156,44 @@ fn a_failing_book_sets_the_exit_code_but_the_others_still_build() {
     assert!(good.join("book/index.html").is_file(), "{err}");
     assert!(err.contains("built 1, up to date 0, failed 1"), "{err}");
 }
+
+#[test]
+fn build_into_installs_a_slim_copy() {
+    if !mdbook_on_path() {
+        eprintln!("skipping: mdbook not on PATH");
+        return;
+    }
+    let src = tempfile::tempdir().unwrap();
+    let guide = fixture(src.path(), "guide", "Guide");
+    std::fs::write(guide.join("cover.svg"), "<svg/>").unwrap();
+    let lib = tempfile::tempdir().unwrap();
+    let into = lib.path().join("books");
+
+    let out = bin()
+        .arg("build")
+        .arg(&guide)
+        .arg("--into")
+        .arg(&into)
+        .output()
+        .unwrap();
+    let err = String::from_utf8(out.stderr).unwrap();
+    assert!(out.status.success(), "{err}");
+    let dest = into.join("guide");
+    assert!(dest.join("book.toml").is_file(), "{err}");
+    assert!(dest.join("cover.svg").is_file());
+    assert!(dest.join("book/index.html").is_file());
+    assert!(!dest.join("src").exists());
+    assert!(err.contains("installed"), "{err}");
+
+    // Second run: built book is fresh, install is fresh, nothing copied.
+    let out = bin()
+        .arg("build")
+        .arg(&guide)
+        .arg("--into")
+        .arg(&into)
+        .output()
+        .unwrap();
+    let err = String::from_utf8(out.stderr).unwrap();
+    assert!(err.contains("built 0, up to date 1, failed 0"), "{err}");
+    assert!(!err.contains("installed"), "{err}");
+}
