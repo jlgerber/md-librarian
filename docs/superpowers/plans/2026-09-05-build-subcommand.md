@@ -451,11 +451,11 @@ fn a_failing_book_sets_the_exit_code_but_the_others_still_build() {
     }
     let tmp = tempfile::tempdir().unwrap();
     let good = fixture(tmp.path(), "good", "Good");
-    // A book whose SUMMARY.md points at a chapter that is a directory, which
-    // mdbook refuses to read.
+    // mdbook 0.5 rejects unknown configuration keys (measured in the
+    // 2026-09-01 spec: `unknown field`), so this book cannot build. Discovery
+    // still lists it: a book.toml with extra keys is still a book.
     let bad = fixture(tmp.path(), "bad", "Bad");
-    std::fs::remove_file(bad.join("src/intro.md")).unwrap();
-    std::fs::create_dir_all(bad.join("src/intro.md")).unwrap();
+    std::fs::write(bad.join("book.toml"), "[book]\ntitle = \"Bad\"\nbogus = \"x\"\n").unwrap();
 
     let out = bin().args(["build", "--root"]).arg(tmp.path()).output().unwrap();
     let err = String::from_utf8(out.stderr).unwrap();
