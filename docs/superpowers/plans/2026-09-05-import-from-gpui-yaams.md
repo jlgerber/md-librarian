@@ -499,7 +499,7 @@ sed -i -f $RENAME $DST/book/src/library.md $DST/book/src/webview.md $DST/book/sr
 sed -i 's#\./md-librarian-webview\.md#./webview.md#g; s#\./books\.md#./library.md#g' $DST/book/src/*.md
 grep -n -i "yaams" $DST/book/src/library.md $DST/book/src/webview.md $DST/book/src/docs-window.md
 ```
-Expected leftovers, all intentional: yaams-tk2 mentions (build-dir contrast, `YAAMS_BOOKS_DIR`, "extracted from yaams-tk2 (yaams-tk2#489)", "In yaams-tk2 exactly one book"), "the same rule as the yaams config search path", the two `[#43]`/`[#47]` link definitions to gpui-yaams issues, and `yaams-ui` gallery mention in webview.md (edited next). Anything else: fix the sed script.
+Expected leftovers, all intentional (verified by a dry run at plan time): yaams-tk2 mentions (build-dir contrast, `YAAMS_BOOKS_DIR`, "extracted from yaams-tk2 (yaams-tk2#489)", "In yaams-tk2 exactly one book"), "the same rule as the yaams config search path", the three `[#43]`/`[#45]`/`[#47]` link definitions to gpui-yaams issues, and the `yaams-ui` gallery mention in webview.md (edited next). Anything else: fix the sed script.
 
 - [ ] **Step 3: Hand edits to the copied chapters**
 

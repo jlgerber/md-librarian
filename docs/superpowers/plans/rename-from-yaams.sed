@@ -25,6 +25,7 @@ s/yaams-books/md-librarian/g
 # YAAMS_BOOKS_DIR is yaams-tk2's and is deliberately NOT matched.
 s/YAAMS_BOOK_PATH/MD_LIBRARIAN_PATH/g
 s#yaams/books#md-librarian/books#g
+s/join("yaams")/join("md-librarian")/g
 
 # --- rez
 s/GPUI_YAAMS_/MD_LIBRARIAN_/g
