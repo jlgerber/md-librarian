@@ -4,6 +4,7 @@ members = [
     "crates/md-librarian",
     "crates/md-librarian-serve",
     "crates/md-librarian-webview",
+    "crates/md-librarian-cli",
 ]
 
 [workspace.package]
