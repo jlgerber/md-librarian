@@ -1,10 +1,10 @@
 //! A floating **WebKit window** (wry) a gpui app can open and drive — the
+//! usdlite #1302 seam: render help/docs in our own process instead of
+//! punting to an external browser.
 //!
 //! Extracted from gpui-yaams at v0.27.0-beta.3. Issue numbers in this crate
 //! (`#43`, `#47`) and "Changed in 0.2x" notes refer to
 //! <https://github.com/jlgerber/gpui-yaams>, where it was developed.
-//! usdlite #1302 seam: render help/docs in our own process instead of
-//! punting to an external browser.
 //!
 //! ## Why a floating window, not a pane
 //!
