@@ -62,13 +62,14 @@ in a per-root index, so a book copied to another root brings its cover along.
 Nothing goes in `book.toml`: mdbook rejects keys it does not know, so a cover
 cannot be declared there.
 
-**Size**: the card page shows the cover in a landscape box 150px tall and
+**Size**: the card page shows the cover in a landscape slot 150px tall and
 roughly 240 to 350px wide, depending on how many columns fit the window, and
-crops it to fill (`object-fit: cover`), so the edges are what gets lost. Make
-it **16:9**, at least **640 × 360** so it stays sharp on HiDPI screens; the
-generated cover uses the same 320 × 180 proportions. Keep the subject centred,
-since a wider window trims the top and bottom and a narrower one trims the
-sides.
+fits the whole image inside it (`object-fit: contain`): a wide logo fills the
+width with bands above and below, a tall one fills the height with bands at
+the sides, and nothing is cropped. A **16:9** image fills the slot best; make
+it at least **640 × 360** so it stays sharp on HiDPI screens. The bands take
+the slot's dark background, so a logo drawn in black on a transparent
+background will not read; give it light strokes or its own background.
 
 A book without a cover gets a generated one, the title's initial on a colour
 derived from the whole title. It is deterministic, so the same book looks the

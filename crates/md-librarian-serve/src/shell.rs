@@ -219,8 +219,8 @@ pub fn grid_document(entries: &[Entry]) -> String {
            background:#161c24;overflow:hidden;transition:border-color .15s,transform .15s}}\
          a.card:hover{{border-color:#4b9fff;transform:translateY(-2px)}}\
          .card .body{{padding:.9rem 1rem 1.1rem}}\
-         .cover,img.cover{{display:block;width:100%;height:150px;object-fit:cover;\
-           background:#0f1419}}\
+         .cover,img.cover{{display:block;width:100%;height:150px;background:#0f1419}}\
+         img.cover{{object-fit:contain;padding:.5rem;box-sizing:border-box}}\
          .title{{font-weight:600;margin:0 0 .25rem}}\
          .desc{{color:#8b949e;margin:0}}\
          .dir{{color:#6e7681;font-size:.85em;margin:.35rem 0 0;font-family:ui-monospace,monospace}}\
