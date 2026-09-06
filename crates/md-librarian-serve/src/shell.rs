@@ -174,21 +174,24 @@ pub fn shell_document(entries: &[Entry], initial: Option<&Book>) -> String {
            border:1px solid #28313b}}\
          header a:hover{{border-color:#4b9fff}}\
          #current{{color:#8b949e}}\
+         #back.home{{visibility:hidden}}\
          iframe{{flex:1 1 auto;width:100%;border:0;background:#6e7681}}\
          </style></head><body>\
-         <header><a href=\"/_grid\" target=\"docframe\">&#8592; Library</a>\
+         <header><a id=\"back\" href=\"/_grid\" target=\"docframe\">&#8592; Library</a>\
          <span id=\"current\"></span></header>\
          <iframe id=\"docframe\" name=\"docframe\" src=\"{initial_src}\" title=\"book\"></iframe>\
          <script>\
          var MAP=[{map}];\
-         var f=document.getElementById('docframe'),c=document.getElementById('current');\
+         var f=document.getElementById('docframe'),c=document.getElementById('current'),\
+           k=document.getElementById('back');\
          f.addEventListener('load',function(){{\
            try{{\
              var b=f.contentDocument&&f.contentDocument.body;\
              if(b){{var bg=getComputedStyle(b).backgroundColor;\
                if(bg&&bg!=='transparent'&&bg!=='rgba(0, 0, 0, 0)'){{f.style.background=bg}}}}\
            }}catch(e){{}}\
-           var p;try{{p=f.contentWindow.location.pathname}}catch(e){{return}}\
+           var p;try{{p=f.contentWindow.location.pathname}}catch(e){{k.className='';return}}\
+           k.className=p==='/_grid'?'home':'';\
            var t='';for(var i=0;i<MAP.length;i++){{if(p.indexOf(MAP[i][0])===0){{t=MAP[i][1];break}}}}\
            c.textContent=t;document.title=t?t+' \\u2014 Books':'Books';\
          }});\

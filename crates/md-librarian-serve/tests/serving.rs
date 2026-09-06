@@ -390,3 +390,33 @@ fn an_empty_library_says_how_to_point_it_at_books() {
         "an empty page must be actionable"
     );
 }
+
+#[test]
+fn the_library_button_hides_itself_on_the_library_page() {
+    let tmp = tempfile::tempdir().unwrap();
+    book(
+        tmp.path(),
+        "guide",
+        "[book]\ntitle = \"Guide\"\n",
+        Some(("book", "<h1>g</h1>")),
+    );
+    let base = serve(vec![tmp.path().to_path_buf()], None);
+
+    let (_, shell) = get(&base, "/");
+    assert!(
+        shell.contains("id=\"back\""),
+        "the bar's link is addressable"
+    );
+    assert!(
+        shell.contains("#back.home{visibility:hidden}"),
+        "hidden by visibility, so the bar keeps its height"
+    );
+    assert!(
+        shell.contains("k.className=p==='/_grid'?'home':''"),
+        "the frame's load handler decides from the frame's own path"
+    );
+    assert!(
+        shell.contains("catch(e){k.className='';return}"),
+        "an external page, whose path cannot be read, shows the way back"
+    );
+}
