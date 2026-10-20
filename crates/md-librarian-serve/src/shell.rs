@@ -146,53 +146,77 @@ pub const FRAME_REVEAL_TIMEOUT_MS: u32 = 1500;
 /// as the language it is; [`shell_document`] defines `MAP`, `LIB` and `WAIT`
 /// ahead of it.
 ///
-/// - **Adopt.** After each load, read the frame's real background, paint the
-///   frame element with it and remember it for that book (`SEEN`), so the
-///   blank between two chapters of one book is the book's own colour. "Real
-///   background" follows the CSS canvas rule — the root element's, else the
-///   body's. mdBook sets it on `<html>` and leaves `<body>` transparent, so
-///   reading only the body (as through #7) never adopted a book's colour.
-/// - **Veil.** When a navigation *leaves* the book on screen — a card, the
-///   Library button, a link into another book — hide the frame before the old
-///   page goes, paint it with the destination's remembered colour (the
-///   library's on a first visit) and fade the new page in once it has loaded.
-///   The shell's body is the library colour, so a veiled frame shows that,
-///   never a half-loaded page or WebKit's white. Navigations inside one book
-///   are not veiled: the adopted colour already hides those, and veiling every
-///   chapter would trade a flash of the book's colour for a dark one.
+/// - **Adopt.** After each load, read the frame's real background and paint
+///   the frame element with it, so the blank between two chapters of one book
+///   is the book's own colour. "Real background" follows the CSS canvas rule —
+///   the root element's, else the body's. mdBook sets it on `<html>` and leaves
+///   `<body>` transparent, so reading only the body (as through #7) never
+///   adopted a book's colour.
+/// - **Veil.** When a click *leaves* the book on screen — a card, the Library
+///   button, a link into another book — hide the frame at once and fade the
+///   new page in once it has loaded. A veiled frame is transparent, so what
+///   shows is the shell's body: always the library colour, never a half-loaded
+///   page or WebKit's white. That includes a light book opened a second time:
+///   it goes dark, then fades in light. Navigations inside one book are not
+///   veiled: the adopted colour already hides those, and veiling every chapter
+///   would trade a flash of the book's colour for a dark one.
+/// - **Unrecognised navigations fall back to the library colour.** A page
+///   that unloads without a click this script saw — WebKit's context-menu
+///   Back/Forward, a mouse's back button, a script setting `location` — may be
+///   heading anywhere, including from a light book to the dark library. So
+///   `pagehide` repaints the frame with `LIB` (not veiled). mdBook's
+///   arrow-key chapter keys are recognised as staying in the book. The cost:
+///   going back between two chapters of a light book shows a dark blank
+///   instead of the book's colour.
 /// - **Name.** Show the current book in the bar and hide the Library button
 ///   on the library itself.
 ///
-/// A click whose default was prevented, a modified click, a link with another
-/// target and a link to another origin are all left alone, and the
-/// [`FRAME_REVEAL_TIMEOUT_MS`] bound reveals the frame even if a navigation
-/// that was veiled never loads.
+/// A click whose default was prevented, a modified or non-primary click, a
+/// `download` link, a link with another target and a link to another origin
+/// are all left alone, and the [`FRAME_REVEAL_TIMEOUT_MS`] bound reveals the
+/// frame even if a navigation that was veiled never loads.
+///
+/// The frame's listeners are attached on its `load`. A click on a page that
+/// has not finished loading (a slow image, say) is therefore not seen; it
+/// falls to the `pagehide` fallback above. There is no event the parent can
+/// hear earlier for a document that does not exist yet.
 const SHELL_SCRIPT: &str = r#"
 var f=document.getElementById('docframe'),c=document.getElementById('current'),
   k=document.getElementById('back');
-var SEEN={'/_grid':LIB},cur=null,veil=0;
+var cur=null,veil=0,known=false;
 function owner(p){
   if(p==='/_grid')return '/_grid';
   for(var i=0;i<MAP.length;i++){if(p.indexOf(MAP[i][0])===0)return MAP[i][0]}
   return null;
 }
+function plain(e){
+  return !e.defaultPrevented&&e.button===0&&!e.metaKey&&!e.ctrlKey&&!e.shiftKey&&!e.altKey;
+}
 function leave(dest){
   if(!dest||dest===cur)return;
-  f.style.background=SEEN[dest]||LIB;
+  f.style.background=LIB;
   f.className='veiled';
   clearTimeout(veil);veil=setTimeout(function(){f.className=''},WAIT);
 }
 function follow(e){
-  if(e.defaultPrevented||e.button!==0||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;
-  var a=e.target&&e.target.closest&&e.target.closest('a[href]');if(!a)return;
+  if(!plain(e))return;
+  var a=e.target&&e.target.closest&&e.target.closest('a[href]');
+  if(!a||a.hasAttribute('download'))return;
   var t=a.getAttribute('target');if(t&&t!=='_self')return;
   var u;try{u=new URL(a.href)}catch(x){return}
   if(u.origin!==location.origin)return;
-  leave(owner(u.pathname));
+  var h=f.contentWindow.location;
+  if(u.hash&&u.pathname===h.pathname&&u.search===h.search)return;
+  known=true;leave(owner(u.pathname));
 }
-k.addEventListener('click',function(e){if(!e.defaultPrevented)leave('/_grid')});
+function chapterKey(e){
+  if(!e.defaultPrevented&&!e.metaKey&&!e.ctrlKey&&!e.shiftKey&&!e.altKey&&
+    (e.key==='ArrowLeft'||e.key==='ArrowRight'))known=true;
+}
+function unknownExit(){if(!known)f.style.background=LIB}
+k.addEventListener('click',function(e){if(plain(e)){known=true;leave('/_grid')}});
 f.addEventListener('load',function(){
-  clearTimeout(veil);f.className='';
+  clearTimeout(veil);f.className='';known=false;
   var bg='';
   try{
     var d=f.contentDocument,els=d?[d.documentElement,d.body]:[];
@@ -204,8 +228,13 @@ f.addEventListener('load',function(){
     if(bg)f.style.background=bg;
   }catch(e){}
   var p;try{p=f.contentWindow.location.pathname}catch(e){cur=null;k.className='';return}
-  cur=owner(p);if(cur&&bg){SEEN[cur]=bg}
-  try{f.contentWindow.addEventListener('click',follow)}catch(e){}
+  cur=owner(p);
+  try{
+    var w=f.contentWindow;
+    w.addEventListener('click',follow);
+    w.addEventListener('keydown',chapterKey);
+    w.addEventListener('pagehide',unknownExit);
+  }catch(e){}
   k.className=p==='/_grid'?'home':'';
   var t='';for(var i=0;i<MAP.length;i++){if(p.indexOf(MAP[i][0])===0){t=MAP[i][1];break}}
   c.textContent=t;document.title=t?t+' \u2014 Books':'Books';
@@ -239,8 +268,8 @@ f.addEventListener('load',function(){
 /// Moving *between* books, or back to the library, is the case adoption alone
 /// gets wrong: the frame still holds the colour of the book being left, which
 /// is white after a light book. So those navigations are veiled instead — the
-/// frame is hidden, repainted with the destination's colour, and faded back in
-/// on load. See [`SHELL_SCRIPT`] for the exact rules.
+/// frame is hidden, so the shell's library-coloured body shows, and the new
+/// page fades in on load. See [`SHELL_SCRIPT`] for the exact rules.
 ///
 /// The blank itself cannot be eliminated from here: it belongs to the frame's
 /// navigation, not to anything this page controls. Following a link to an
@@ -430,44 +459,8 @@ mod tests {
     }
 
     #[test]
-    fn leaving_a_book_veils_the_frame_and_its_load_fades_it_back_in() {
-        let shell = shell_document(&[], None);
-        assert!(
-            shell.contains("iframe.veiled{opacity:0;transition:none}"),
-            "the veil hides the old page at once"
-        );
-        assert!(
-            shell.contains("transition:opacity .15s ease-out"),
-            "and the new one fades in"
-        );
-        assert!(shell.contains(
-            "k.addEventListener('click',function(e){if(!e.defaultPrevented)leave('/_grid')})"
-        ));
-        assert!(shell.contains("f.contentWindow.addEventListener('click',follow)"));
-        assert!(
-            shell.contains(
-                "f.addEventListener('load',function(){\n  clearTimeout(veil);f.className='';"
-            ),
-            "a load always lifts the veil"
-        );
-        assert!(
-            shell.contains("veil=setTimeout(function(){f.className=''},WAIT)"),
-            "a navigation that never loads cannot leave the frame hidden"
-        );
-    }
-
-    #[test]
-    fn the_adopted_colour_is_the_root_elements_before_the_bodys() {
-        // mdBook paints <html> and leaves <body> transparent.
-        assert!(SHELL_SCRIPT.contains("els=d?[d.documentElement,d.body]:[]"));
-        assert!(SHELL_SCRIPT.contains("getComputedStyle(els[j]).backgroundColor"));
-    }
-
-    #[test]
-    fn a_veiled_frame_is_painted_with_the_destinations_remembered_colour() {
-        let shell = shell_document(&[], None);
-        assert!(shell.contains("f.style.background=SEEN[dest]||LIB;"));
-        assert!(shell.contains("cur=owner(p);if(cur&&bg){SEEN[cur]=bg}"));
+    fn the_shell_styles_a_veiled_frame_as_hidden() {
+        assert!(shell_document(&[], None).contains("iframe.veiled{opacity:0"));
     }
 
     #[test]

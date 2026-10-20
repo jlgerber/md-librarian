@@ -37,12 +37,9 @@ consumers pin.
   library crates are free of wry/tao/GTK by construction. Public API shapes
   and CLI flags are unchanged. Earlier history lives in gpui-yaams'
   CHANGELOG (0.22.0 through 0.27.0-beta.3).
-
-### Changed
-
 - **`WebWindowOptions::background`** (`Option<(u8, u8, u8)>`, default
-  `None`): what the window paints before a page does. A struct literal that
-  names every field now needs it, or `..Default::default()`.
+  `None`): what the window paints before a page does. **Breaking** for a
+  struct literal that names every field: add it, or `..Default::default()`.
 
 ### Fixed
 

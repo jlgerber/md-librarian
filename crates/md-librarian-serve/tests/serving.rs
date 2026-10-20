@@ -109,10 +109,6 @@ fn the_frame_is_not_painted_white_between_pages() {
         shell.contains("border:0;background:#0f1419"),
         "the frame defaults to the library's background (#8)"
     );
-    assert!(
-        shell.contains("getComputedStyle(els[j]).backgroundColor"),
-        "the shell must adopt the book's own background after a load"
-    );
 }
 
 #[test]

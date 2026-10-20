@@ -81,7 +81,7 @@ cargo run -p md-librarian-webview --example first_paint drop-early # #47: drop w
 use md_librarian_webview::{WebContent, WebWindow, WebWindowOptions};
 
 let help = WebWindow::open(
-    WebWindowOptions { title: "usdlite help".into(), width: 1024, height: 768, background: None },
+    WebWindowOptions { title: "usdlite help".into(), width: 1024, height: 768, ..Default::default() },
     WebContent::Url("file:///opt/usdlite/docs/index.html".into()),
 )?;
 
