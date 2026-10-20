@@ -124,6 +124,9 @@ if [ "$ship_book" = "1" ]; then
         [ -f "$cover" ] && install -m 0644 "$cover" "$books_dest/$(basename "$cover")"
     done
     cp -r "$SRC/book/html" "$books_dest/html"
+    # Name the root's library on the page: without it the heading would be the
+    # directory name, "books", which says nothing (md-librarian #9).
+    printf 'name = "md-librarian"\n' > "$REZ_BUILD_INSTALL_PATH/books/library.toml"
     echo "rez_build: book shipped as a library root → $books_dest"
 fi
 

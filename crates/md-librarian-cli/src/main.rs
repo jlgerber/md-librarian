@@ -30,7 +30,9 @@ use clap::{Parser, Subcommand};
     about = "Browse a library of mdbooks",
     long_about = "Serves every book found on the search path and opens a window on the library.\n\n\
                   Roots come from --root, else MD_LIBRARIAN_PATH (a stacking, colon-separated \
-                  list), else $XDG_DATA_HOME/md-librarian/books. Earlier roots shadow later ones.\n\n\
+                  list), else $XDG_DATA_HOME/md-librarian/books. Each root is shown as its own \
+                  library, named for its directory or by a library.toml in it; earlier roots \
+                  shadow later ones.\n\n\
                   `md-librarian build` brings the books on those roots up to date with mdbook."
 )]
 struct Cli {

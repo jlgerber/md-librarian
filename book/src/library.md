@@ -63,7 +63,7 @@ user-books                       <- the root's directory name
 ────────────────────────────────
 [ Mine ] [ Notes ]
 
-books                            <- the rez package's appended root
+md-librarian                     <- the rez package's root, named by its library.toml
 /opt/rez/md_librarian/0.3.0/books
 ────────────────────────────────
 [ md-librarian ]
@@ -75,15 +75,35 @@ books                            <- the rez package's appended root
   front of the one a package ships.
 - **A library with nothing to show is hidden**: a root that does not exist,
   one with no books, and one whose every book was shadowed or filtered out.
-- **The name is the root's directory name**, read from the real directory, so
-  `--root .`, `--root ../books` and `--root ~/books/` are named for the
-  directory they point at. Two roots with the same name grow parent
-  directories until they differ — `/a/docs` and `/b/docs` show as `a/docs`
-  and `b/docs`. (The XDG default root and the rez package's root are both
-  called `books`; side by side they show as `md-librarian/books` and
-  `0.3.0/books`.)
+  The same directory given twice (`d` and `d/.`) is therefore one library.
+- **The name is the root's directory name**, as you spelled it: the path is
+  made absolute and `.` and `..` are folded *lexically*, so `--root .`,
+  `--root ../books` and `--root ~/books/` are named for the directory they
+  point at, and a symlinked root keeps the link's name rather than its
+  target's.
+- **Two libraries with the same name grow parent directories** until they
+  differ — `/a/docs` and `/b/docs` show as `a/docs` and `b/docs`. Only
+  *visible* libraries count, so a name can gain its parent prefix when
+  another library of the same name becomes visible — a book added to a root
+  that was empty, say.
 - The heading is shown even when there is only one library, so the page looks
   the same however many roots you pass.
+
+### Naming a library
+
+A root can name its own library with a **`library.toml`** at its top level:
+
+```toml
+# <root>/library.toml
+name = "Studio pipeline"
+```
+
+The name is display only — a book's identity is still its title, and URLs do
+not change. It goes through the same collision rule as directory names: two
+roots that both say `Docs` show as `a/Docs` and `b/Docs`. A file that does
+not parse, or has no non-blank string `name`, is logged as a warning and the
+directory name is used. The rez package ships one, so its root reads
+`md-librarian` rather than `books`.
 
 Note the deliberate contrast with yaams-tk2's `YAAMS_BOOKS_DIR`, which names a
 *single* directory: `_PATH` is a list, `_DIR` is one. The suffix is the
@@ -295,7 +315,8 @@ let roots = roots(&[]);
 let include: Option<&[String]> = None;
 let libs: Vec<Library> = libraries(&roots, include);
 for lib in &libs {
-    // name: "docs", or "a/docs" when another root is also called docs.
+    // name: library.toml's `name`, else "docs" — or "a/docs" when another
+    // visible library is also called docs.
     println!("{}  ({}, root #{})", lib.name, lib.root.display(), lib.root_index);
     for b in &lib.books {
         println!("  {}", b.title);
@@ -305,6 +326,10 @@ for title in missing_titles(&libs, include) {
     println!("{title} — not found in any root");
 }
 ```
+
+`Library` is `#[non_exhaustive]`; build one with
+`Library::new(name: String, root: PathBuf, root_index: usize, books: Vec<Book>)`.
+The file name is `md_librarian::LIBRARY_FILE` (`"library.toml"`).
 
 `library` is exactly `libraries` flattened, plus an `Entry::Missing` per missing
 title, re-sorted by title. Use it when only *which* books matters.
@@ -424,12 +449,13 @@ should be dropped once the underlying combination is repaired.
 
 ## What is tested, and what is a checklist
 
-Testable, and tested — over real HTTP against a temporary root, with no display:
-discovery and `build-dir`, the title fallback, first-root-wins shadowing, one
-section per library in path order with empty and missing roots hidden, names
-for same-named roots, both copies of a same-titled pair, the include-list and its dead card, an unbuilt book
-listed but never linked, percent-encoded directory names, refusal to serve
-outside a book, and covers both real and generated.
+Testable, and tested — over real HTTP against a temporary root, with no
+display: discovery and `build-dir`, the title fallback, first-root-wins
+shadowing, one section per library in path order with empty and missing roots
+hidden, library names (`library.toml`, same-named roots, symlinked and
+relative roots), both copies of a same-titled pair, the include-list and its
+dead card, an unbuilt book listed but never linked, percent-encoded directory
+names, refusal to serve outside a book, and covers both real and generated.
 
 Not testable, so keep it as a manual checklist: opening the window, clicking a
 card, following an external link and returning via the bar, close-then-reopen,

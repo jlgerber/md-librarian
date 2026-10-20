@@ -343,7 +343,7 @@ pub fn grid_document(libraries: &[Library], missing: &[String]) -> String {
             let cards: String = missing.iter().map(|t| missing_card(t)).collect();
             out.push(format!(
                 "<section class=\"library missing\"><h2 class=\"name\">Not found</h2>\
-                 <p class=\"root\">named by the include-list, in no root</p>\
+                 <p class=\"root\">listed with <code>--include</code>, but in no root</p>\
                  <hr class=\"rule\"><div class=\"grid\">{cards}</div></section>"
             ));
         }
@@ -412,7 +412,7 @@ fn book_card(b: &Book) -> String {
         };
         format!(
             "<a class=\"card\" href=\"{href}\">{cover}<div class=\"body\">\
-                 <p class=\"title\">{title}</p>{desc}{dir}</div></a>",
+             <p class=\"title\">{title}</p>{desc}{dir}</div></a>",
             href = book_prefix(b),
             title = html_escape(&b.title),
             desc = description(&b.description),
@@ -514,12 +514,12 @@ mod tests {
 
     #[test]
     fn a_library_name_and_root_cannot_break_out_of_the_heading() {
-        let lib = Library {
-            name: "a\"<b>".into(),
-            root: std::path::PathBuf::from("/x/\" onmouseover=alert(1) \"/a\"<b>"),
-            root_index: 3,
-            books: Vec::new(),
-        };
+        let lib = Library::new(
+            "a\"<b>".into(),
+            std::path::PathBuf::from("/x/\" onmouseover=alert(1) \"/a\"<b>"),
+            3,
+            Vec::new(),
+        );
         let page = grid_document(&[lib], &[]);
         assert!(page.contains(">a&quot;&lt;b&gt;</h2>"));
         assert!(

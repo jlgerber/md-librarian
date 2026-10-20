@@ -449,17 +449,17 @@ fn each_root_is_a_library_section_with_its_own_cards_in_path_order() {
 
     let (_, grid) = get(&base, "/_grid");
     assert_eq!(grid.matches("<section class=\"library\"").count(), 2);
-    let first = at(&grid, ">user-books</h2>");
+    let first = at(&grid, "data-root=\"0\"");
     let mine = at(&grid, "href=\"/0/mine/\"");
-    let second = at(&grid, ">shipped</h2>");
+    let second = at(&grid, "data-root=\"1\"");
     let guide = at(&grid, "href=\"/1/guide/\"");
     assert!(
         first < mine && mine < second && second < guide,
         "heading, then that library's cards, in search-path order"
     );
-    let root = std::fs::canonicalize(&pkg).unwrap();
+    assert!(grid.contains(">user-books</h2>") && grid.contains(">shipped</h2>"));
     assert!(
-        grid.contains(&format!("title=\"{}\"", root.display())),
+        grid.contains(&format!("title=\"{}\"", pkg.display())),
         "the full root path is the heading's tooltip"
     );
     assert!(
@@ -532,8 +532,11 @@ fn a_root_with_nothing_to_show_gets_no_section_and_no_index_shift() {
     let base = serve(vec![tmp.path().join("nope"), empty, real, shadowed], None);
     let (_, grid) = get(&base, "/_grid");
     assert_eq!(grid.matches("<section class=\"library\"").count(), 1);
+    assert!(
+        grid.contains("data-root=\"2\""),
+        "only the root with a book to show"
+    );
     assert!(grid.contains(">real</h2>"));
-    assert!(!grid.contains(">empty</h2>") && !grid.contains(">shadowed</h2>"));
     assert!(
         grid.contains("href=\"/2/g/\""),
         "the index is the path position"
@@ -552,8 +555,28 @@ fn missing_titles_follow_the_libraries_as_their_own_section() {
     );
     let base = serve(vec![docs], Some(vec!["gpui".into(), "Typo".into()]));
     let (_, grid) = get(&base, "/_grid");
-    let lib = at(&grid, ">docs</h2>");
+    let lib = at(&grid, "data-root=\"0\"");
     let section = at(&grid, "class=\"library missing\"");
     let typo = at(&grid, ">Typo<");
     assert!(lib < section && section < typo);
+}
+
+#[test]
+fn a_library_toml_name_is_the_heading() {
+    let tmp = tempfile::tempdir().unwrap();
+    let r = tmp.path().join("books");
+    book(
+        &r,
+        "g",
+        "[book]\ntitle = \"g\"\n",
+        Some(("book", "<h1>g</h1>")),
+    );
+    std::fs::write(r.join("library.toml"), "name = \"md-librarian\"\n").unwrap();
+    let base = serve(vec![r.clone()], None);
+    let (_, grid) = get(&base, "/_grid");
+    assert!(grid.contains(">md-librarian</h2>"));
+    assert!(
+        grid.contains(&format!("title=\"{}\"", r.display())),
+        "the path is still there to say where it lives"
+    );
 }

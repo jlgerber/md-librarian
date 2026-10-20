@@ -95,7 +95,7 @@ rez test md_librarian --list               # everything, including explicit ones
 | Test | Runs by default | What it checks |
 |---|---|---|
 | `tools_present` | yes | both tools resolve on `PATH` |
-| `books_root` | yes | the shipped book is a real root (`book.toml` beside `html/index.html`) *and* is on `MD_LIBRARIAN_PATH` |
+| `books_root` | yes | the shipped book is a real root (`book.toml` beside `html/index.html`), is on `MD_LIBRARIAN_PATH`, *and* the root's `library.toml` names it `md-librarian` |
 | `books_serve` | no | `md-librarian --no-window` binds and prints its URL — end to end, but it binds a port |
 | `cargo_test` | no | the workspace's own `cargo test --workspace --locked` |
 

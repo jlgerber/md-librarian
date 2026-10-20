@@ -23,7 +23,8 @@ use clap::Args;
 
 #[derive(Args, Debug)]
 pub struct ServeArgs {
-    /// A repository root; repeatable. Overrides MD_LIBRARIAN_PATH. Earlier wins.
+    /// A repository root; repeatable. Overrides MD_LIBRARIAN_PATH. Each root is
+    /// shown as its own library; earlier wins.
     #[arg(long, value_name = "DIR")]
     root: Vec<PathBuf>,
 

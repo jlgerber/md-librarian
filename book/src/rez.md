@@ -13,7 +13,8 @@ Rust workspace depends on the crates as cargo git dependencies pinned to a tag.
 The package also installs this book as a discoverable root at
 `{root}/books/md-librarian/` and **appends** `{root}/books` to
 `MD_LIBRARIAN_PATH`, so a resolve opens with something in it and a user's own
-roots still win.
+roots still win. A `{root}/books/library.toml` names that root's library
+`md-librarian` on the page, rather than `books`.
 
 ```sh
 just rez-build                 # rez build -i into ~/packages
