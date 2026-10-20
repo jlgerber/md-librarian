@@ -407,6 +407,7 @@ fn drop_early(t0: Instant, url: &str) -> anyhow::Result<()> {
             title: TITLE.into(),
             width: 900,
             height: 600,
+            background: None,
         },
         WebContent::Url(url.to_string()),
     )?;
@@ -490,6 +491,7 @@ fn main() -> anyhow::Result<()> {
             title: TITLE.into(),
             width: 900,
             height: 600,
+            background: None,
         },
         WebContent::Url(url.clone()),
     )?;

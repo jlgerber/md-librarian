@@ -1332,8 +1332,10 @@ name = "md-librarian-webview"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "gdk",
  "glib",
  "tao",
+ "webkit2gtk",
  "wry",
 ]
 

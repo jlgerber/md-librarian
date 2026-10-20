@@ -23,5 +23,11 @@ anyhow = "1"
 # build — only an edge that says so out loud instead of borrowing someone
 # else's re-export.
 glib = "0.18"
+# `webkit2gtk` and `gdk` are named, as of #8 (md-librarian), for one call:
+# setting the webview's background colour. wry has a builder method for it,
+# but its GTK backend passes 0..255 channels where GDK wants 0..1, so any
+# nonzero channel saturates. Both are the versions wry already pulls in.
+gdk = "0.18"
+webkit2gtk = { version = "2.0", features = ["v2_8"] }
 tao = "0.34"
 wry = "0.53"

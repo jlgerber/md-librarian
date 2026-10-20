@@ -197,6 +197,27 @@ book's title — survives everything the book does, including a link out to an
 external site. In a window with no back button and no address bar, that bar is
 the only way home.
 
+What the window paints before a page does is the library's background
+(`md_librarian_serve::shell::LIBRARY_BACKGROUND`, `#0f1419`): the native
+window, the webview, the shell and the frame all start from it, so nothing
+the viewer itself paints is white.
+
+- **Between two chapters of one book** the frame shows that book's own
+  background, read after each load (from `<html>`, where mdBook puts it,
+  else `<body>`).
+- **Opening a book, returning to the library, or following a link into
+  another book** veils the frame: the old page is hidden at once, the
+  library colour shows, and the new page fades in once it has loaded. A
+  light book therefore goes dark, then fades in light — never white, and
+  never half-styled. A veil that no load lifts lifts itself after 1.5 s.
+- **A navigation the shell did not see start** — WebKit's context-menu
+  Back/Forward, a mouse's back button, a script setting `location`, or a
+  click on a page that had not finished loading — repaints the frame with
+  the library colour as the old page goes, since it may be heading to the
+  library. The trade-off: going *back* between two chapters of a light book
+  shows a dark blank instead of the book's colour. mdBook's arrow-key
+  chapter keys are recognised as staying in the book.
+
 The shell is regenerated **on every request**. A book built while the viewer is
 open appears on refresh, read-only roots (an NFS mount, or a root inside a rez
 package) work, and there is no written page to go stale or to overwrite someone
@@ -350,3 +371,15 @@ Not testable, so keep it as a manual checklist: opening the window, clicking a
 card, following an external link and returning via the bar, close-then-reopen,
 the no-books-anywhere case, and the parent-dies case — both a graceful exit and
 `kill -9`.
+
+And the flash (#8), on a dark book *and* a light one — nothing may be white:
+
+- clicking a card veils the frame dark, then fades the book in;
+- a chapter link or an arrow key inside a book is not veiled, and the blank
+  is the book's colour;
+- **← Library** veils, and the library fades in;
+- a link from one book into another veils;
+- context-menu **Back** from a book to the library shows dark, not the
+  book's colour;
+- a ctrl-click, a `download` link and an in-page `#anchor` do nothing to the
+  frame.

@@ -108,12 +108,138 @@ pub fn generated_cover(title: &str) -> String {
     )
 }
 
+/// The library's background, as opaque RGB — the one colour every surface
+/// that can paint before a page does should agree on.
+///
+/// The library page's CSS, the shell's own body, the frame's default and the
+/// native window and webview behind all of them (`md-librarian-cli` passes this
+/// to `WebWindowOptions::background`) are all derived from it, so a surface
+/// cannot drift to a different dark — or back to white — on its own. Issue #8.
+pub const LIBRARY_BACKGROUND: (u8, u8, u8) = (0x0f, 0x14, 0x19);
+
+/// [`LIBRARY_BACKGROUND`] as a CSS colour, `#rrggbb`.
+pub fn library_background_css() -> String {
+    let (r, g, b) = LIBRARY_BACKGROUND;
+    format!("#{r:02x}{g:02x}{b:02x}")
+}
+
 /// Shared CSS for both generated documents.
-const STYLE: &str = "\
-*{box-sizing:border-box}\
-body{margin:0;background:#0f1419;color:#c9d1d9;\
- font:14px/1.5 system-ui,-apple-system,Segoe UI,sans-serif}\
-a{color:inherit;text-decoration:none}";
+fn style() -> String {
+    format!(
+        "*{{box-sizing:border-box}}\
+         body{{margin:0;background:{bg};color:#c9d1d9;\
+          font:14px/1.5 system-ui,-apple-system,Segoe UI,sans-serif}}\
+         a{{color:inherit;text-decoration:none}}",
+        bg = library_background_css()
+    )
+}
+
+/// How long the frame stays hidden waiting for a book to load before it is
+/// shown regardless, in milliseconds.
+///
+/// The same bound, for the same reason, as the webview's first-paint wait: a
+/// page that never finishes loading must not leave an empty window. A book
+/// served from loopback loads in tens of milliseconds and never reaches it.
+pub const FRAME_REVEAL_TIMEOUT_MS: u32 = 1500;
+
+/// The shell's script. Plain JavaScript, not a `format!` template, so it reads
+/// as the language it is; [`shell_document`] defines `MAP`, `LIB` and `WAIT`
+/// ahead of it.
+///
+/// - **Adopt.** After each load, read the frame's real background and paint
+///   the frame element with it, so the blank between two chapters of one book
+///   is the book's own colour. "Real background" follows the CSS canvas rule —
+///   the root element's, else the body's. mdBook sets it on `<html>` and leaves
+///   `<body>` transparent, so reading only the body (as through #7) never
+///   adopted a book's colour.
+/// - **Veil.** When a click *leaves* the book on screen — a card, the Library
+///   button, a link into another book — hide the frame at once and fade the
+///   new page in once it has loaded. A veiled frame is transparent, so what
+///   shows is the shell's body: always the library colour, never a half-loaded
+///   page or WebKit's white. That includes a light book opened a second time:
+///   it goes dark, then fades in light. Navigations inside one book are not
+///   veiled: the adopted colour already hides those, and veiling every chapter
+///   would trade a flash of the book's colour for a dark one.
+/// - **Unrecognised navigations fall back to the library colour.** A page
+///   that unloads without a click this script saw — WebKit's context-menu
+///   Back/Forward, a mouse's back button, a script setting `location` — may be
+///   heading anywhere, including from a light book to the dark library. So
+///   `pagehide` repaints the frame with `LIB` (not veiled). mdBook's
+///   arrow-key chapter keys are recognised as staying in the book. The cost:
+///   going back between two chapters of a light book shows a dark blank
+///   instead of the book's colour.
+/// - **Name.** Show the current book in the bar and hide the Library button
+///   on the library itself.
+///
+/// A click whose default was prevented, a modified or non-primary click, a
+/// `download` link, a link with another target and a link to another origin
+/// are all left alone, and the [`FRAME_REVEAL_TIMEOUT_MS`] bound reveals the
+/// frame even if a navigation that was veiled never loads.
+///
+/// The frame's listeners are attached on its `load`. A click on a page that
+/// has not finished loading (a slow image, say) is therefore not seen; it
+/// falls to the `pagehide` fallback above. There is no event the parent can
+/// hear earlier for a document that does not exist yet.
+const SHELL_SCRIPT: &str = r#"
+var f=document.getElementById('docframe'),c=document.getElementById('current'),
+  k=document.getElementById('back');
+var cur=null,veil=0,known=false;
+function owner(p){
+  if(p==='/_grid')return '/_grid';
+  for(var i=0;i<MAP.length;i++){if(p.indexOf(MAP[i][0])===0)return MAP[i][0]}
+  return null;
+}
+function plain(e){
+  return !e.defaultPrevented&&e.button===0&&!e.metaKey&&!e.ctrlKey&&!e.shiftKey&&!e.altKey;
+}
+function leave(dest){
+  if(!dest||dest===cur)return;
+  f.style.background=LIB;
+  f.className='veiled';
+  clearTimeout(veil);veil=setTimeout(function(){f.className=''},WAIT);
+}
+function follow(e){
+  if(!plain(e))return;
+  var a=e.target&&e.target.closest&&e.target.closest('a[href]');
+  if(!a||a.hasAttribute('download'))return;
+  var t=a.getAttribute('target');if(t&&t!=='_self')return;
+  var u;try{u=new URL(a.href)}catch(x){return}
+  if(u.origin!==location.origin)return;
+  var h=f.contentWindow.location;
+  if(u.hash&&u.pathname===h.pathname&&u.search===h.search)return;
+  known=true;leave(owner(u.pathname));
+}
+function chapterKey(e){
+  if(!e.defaultPrevented&&!e.metaKey&&!e.ctrlKey&&!e.shiftKey&&!e.altKey&&
+    (e.key==='ArrowLeft'||e.key==='ArrowRight'))known=true;
+}
+function unknownExit(){if(!known)f.style.background=LIB}
+k.addEventListener('click',function(e){if(plain(e)){known=true;leave('/_grid')}});
+f.addEventListener('load',function(){
+  clearTimeout(veil);f.className='';known=false;
+  var bg='';
+  try{
+    var d=f.contentDocument,els=d?[d.documentElement,d.body]:[];
+    for(var j=0;j<els.length&&!bg;j++){
+      if(!els[j])continue;
+      var v=getComputedStyle(els[j]).backgroundColor;
+      if(v&&v!=='transparent'&&v!=='rgba(0, 0, 0, 0)')bg=v;
+    }
+    if(bg)f.style.background=bg;
+  }catch(e){}
+  var p;try{p=f.contentWindow.location.pathname}catch(e){cur=null;k.className='';return}
+  cur=owner(p);
+  try{
+    var w=f.contentWindow;
+    w.addEventListener('click',follow);
+    w.addEventListener('keydown',chapterKey);
+    w.addEventListener('pagehide',unknownExit);
+  }catch(e){}
+  k.className=p==='/_grid'?'home':'';
+  var t='';for(var i=0;i<MAP.length;i++){if(p.indexOf(MAP[i][0])===0){t=MAP[i][1];break}}
+  c.textContent=t;document.title=t?t+' \u2014 Books':'Books';
+});
+"#;
 
 /// The shell: a bar that never unloads, over the frame everything else renders in.
 ///
@@ -133,12 +259,19 @@ a{color:inherit;text-decoration:none}";
 ///
 /// Every chapter is a separate document, so the browser blanks the frame on
 /// each navigation and the frame's own background is what shows through. It
-/// defaults to grey rather than white — a white flash against a dark book is
-/// the worst case — and after each load the shell reads the book's real
-/// background and adopts it, so subsequent navigations flash the book's own
-/// colour and are effectively invisible.
+/// defaults to the library's background ([`LIBRARY_BACKGROUND`]) — never
+/// white, the worst case against a dark book — and after each load the shell
+/// reads the book's real background and adopts it, so later navigations
+/// within that book flash the book's own colour and are effectively
+/// invisible.
 ///
-/// It cannot be eliminated from here: the blank paint belongs to the frame's
+/// Moving *between* books, or back to the library, is the case adoption alone
+/// gets wrong: the frame still holds the colour of the book being left, which
+/// is white after a light book. So those navigations are veiled instead — the
+/// frame is hidden, so the shell's library-coloured body shows, and the new
+/// page fades in on load. See [`SHELL_SCRIPT`] for the exact rules.
+///
+/// The blank itself cannot be eliminated from here: it belongs to the frame's
 /// navigation, not to anything this page controls. Following a link to an
 /// external site keeps whatever colour was last adopted, because reading that
 /// document is not permitted.
@@ -165,7 +298,7 @@ pub fn shell_document(entries: &[Entry], initial: Option<&Book>) -> String {
 
     format!(
         "<!doctype html><html><head><meta charset=\"utf-8\">\
-         <title>Books</title><style>{STYLE}\
+         <title>Books</title><style>{style}\
          html,body{{height:100%}}\
          body{{display:flex;flex-direction:column}}\
          header{{display:flex;align-items:center;gap:.9rem;padding:.5rem .9rem;\
@@ -175,27 +308,17 @@ pub fn shell_document(entries: &[Entry], initial: Option<&Book>) -> String {
          header a:hover{{border-color:#4b9fff}}\
          #current{{color:#8b949e}}\
          #back.home{{visibility:hidden}}\
-         iframe{{flex:1 1 auto;width:100%;border:0;background:#6e7681}}\
+         iframe{{flex:1 1 auto;width:100%;border:0;background:{bg};\
+           transition:opacity .15s ease-out}}\
+         iframe.veiled{{opacity:0;transition:none}}\
          </style></head><body>\
          <header><a id=\"back\" href=\"/_grid\" target=\"docframe\">&#8592; Library</a>\
          <span id=\"current\"></span></header>\
          <iframe id=\"docframe\" name=\"docframe\" src=\"{initial_src}\" title=\"book\"></iframe>\
-         <script>\
-         var MAP=[{map}];\
-         var f=document.getElementById('docframe'),c=document.getElementById('current'),\
-           k=document.getElementById('back');\
-         f.addEventListener('load',function(){{\
-           try{{\
-             var b=f.contentDocument&&f.contentDocument.body;\
-             if(b){{var bg=getComputedStyle(b).backgroundColor;\
-               if(bg&&bg!=='transparent'&&bg!=='rgba(0, 0, 0, 0)'){{f.style.background=bg}}}}\
-           }}catch(e){{}}\
-           var p;try{{p=f.contentWindow.location.pathname}}catch(e){{k.className='';return}}\
-           k.className=p==='/_grid'?'home':'';\
-           var t='';for(var i=0;i<MAP.length;i++){{if(p.indexOf(MAP[i][0])===0){{t=MAP[i][1];break}}}}\
-           c.textContent=t;document.title=t?t+' \\u2014 Books':'Books';\
-         }});\
-         </script></body></html>"
+         <script>var MAP=[{map}];var LIB=\"{bg}\";var WAIT={FRAME_REVEAL_TIMEOUT_MS};\
+         {SHELL_SCRIPT}</script></body></html>",
+        style = style(),
+        bg = library_background_css(),
     )
 }
 
@@ -213,7 +336,7 @@ pub fn grid_document(entries: &[Entry]) -> String {
 
     format!(
         "<!doctype html><html><head><meta charset=\"utf-8\"><title>Library</title>\
-         <style>{STYLE}\
+         <style>{style}\
          main{{padding:1.6rem;max-width:1100px;margin:0 auto}}\
          h1{{font-size:1.35rem;margin:0 0 1.2rem;font-weight:600}}\
          .grid{{display:grid;gap:1rem;\
@@ -231,7 +354,8 @@ pub fn grid_document(entries: &[Entry]) -> String {
          .why{{color:#d29922;font-size:.85em;margin:.35rem 0 0}}\
          .empty{{color:#8b949e}}\
          </style></head><body><main><h1>Library</h1>\
-         <div class=\"grid\">{cards}</div></main></body></html>"
+         <div class=\"grid\">{cards}</div></main></body></html>",
+        style = style(),
     )
 }
 
@@ -297,5 +421,57 @@ fn dir_line(b: &Book) -> String {
         format!("<p class=\"dir\">{}</p>", html_escape(&b.dir_name))
     } else {
         String::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_library_background_css_is_the_rgb_constant() {
+        assert_eq!(library_background_css(), "#0f1419");
+    }
+
+    #[test]
+    fn the_library_page_and_the_shell_paint_their_body_with_the_library_background() {
+        let body = format!("body{{margin:0;background:{}", library_background_css());
+        assert!(grid_document(&[]).contains(&body));
+        assert!(shell_document(&[], None).contains(&body));
+    }
+
+    #[test]
+    fn the_frame_defaults_to_the_library_background_not_grey_or_white() {
+        let shell = shell_document(&[], None);
+        assert!(shell.contains(&format!(
+            "iframe{{flex:1 1 auto;width:100%;border:0;background:{}",
+            library_background_css()
+        )));
+        assert!(!shell.contains("#6e7681"), "the old grey default is gone");
+        assert!(!shell.contains("background:#fff"));
+    }
+
+    #[test]
+    fn the_script_is_handed_the_library_colour_and_the_reveal_bound() {
+        let shell = shell_document(&[], None);
+        assert!(shell.contains(&format!("var LIB=\"{}\";", library_background_css())));
+        assert!(shell.contains(&format!("var WAIT={FRAME_REVEAL_TIMEOUT_MS};")));
+    }
+
+    #[test]
+    fn the_shell_styles_a_veiled_frame_as_hidden() {
+        assert!(shell_document(&[], None).contains("iframe.veiled{opacity:0"));
+    }
+
+    #[test]
+    fn the_script_is_injected_verbatim() {
+        assert!(
+            !SHELL_SCRIPT.contains("</script"),
+            "it cannot end its own element"
+        );
+        assert!(
+            shell_document(&[], None).contains(SHELL_SCRIPT),
+            "inserted as-is, not through a format template that would halve its braces"
+        );
     }
 }

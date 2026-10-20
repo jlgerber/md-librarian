@@ -194,6 +194,7 @@ pub fn show_docs(cx: &mut gpui::App) {
             title: "documentation".into(),
             width: 1100,
             height: 800,
+            ..Default::default()
         },
         md_librarian_webview::WebContent::Url(file_url(&shell)),
     ) {
