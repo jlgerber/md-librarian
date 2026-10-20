@@ -29,6 +29,11 @@
 //! are searched in order and the **first one wins**, the same rule the yaams
 //! config search path and `USDLITE_ASSET_PATH` already use.
 //!
+//! Each root is also a **library** of its own, named for its directory:
+//! [`libraries`] returns the books grouped that way, [`library`] the same books
+//! as one flat list. Shadowing is the same in both — a later root loses only the
+//! titles an earlier one already has.
+//!
 //! # Why identity is the title
 //!
 //! mdbook 0.5 **rejects unknown configuration**: `[book] id = "…"` fails the
@@ -219,63 +224,179 @@ pub fn default_root() -> PathBuf {
     data.join("md-librarian").join("books")
 }
 
-/// Build the library: discover every root in order, shadow duplicates, apply an
-/// optional include-list, and sort alphabetically by title.
+/// One root's books — a **library** on the page.
 ///
-/// `include` is a list of **titles**; `None` means everything. A root that does
-/// not exist is skipped with a log line — not silently (a typo or an unmounted
-/// NFS root should leave a trace) and not fatally (a package that is not
-/// resolved on this machine must not stop the viewer).
-pub fn library(roots: &[PathBuf], include: Option<&[String]>) -> Vec<Entry> {
-    let mut books: Vec<Book> = Vec::new();
+/// Each root on the search path is its own library (issue #9), named for the
+/// directory it is. Shadowing still runs *across* libraries: a book whose
+/// title an earlier library already has is dropped from the later one, which
+/// is what keeps a user's root in front of the one a rez package appends.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Library {
+    /// The display name: the root's directory name, lengthened with parent
+    /// directories only as far as it takes to tell two same-named roots apart
+    /// (`/a/docs` and `/b/docs` show as `a/docs` and `b/docs`).
+    pub name: String,
+    /// The root directory, canonicalised so `.`, `..`, a relative path and a
+    /// trailing separator all read as the real directory. Shown under the name.
+    pub root: PathBuf,
+    /// The root's position on the search path — the same index every
+    /// [`Book::root_index`] in [`Library::books`] carries, and the first
+    /// segment of their URLs. Not renumbered when a library is hidden.
+    pub root_index: usize,
+    /// This library's books, after shadowing and the include-list, sorted by
+    /// title the same way [`library`] sorts. Never empty: an empty library is
+    /// not returned.
+    pub books: Vec<Book>,
+}
+
+/// Build the library grouped **by root**: one [`Library`] per root that still
+/// has a book to show, in search-path order.
+///
+/// - A book is dropped from a later library when an **earlier** library has a
+///   book with the same title (first wins, as in [`library`]). Two same-titled
+///   books in *one* root are both kept, marked [`Book::ambiguous`].
+/// - `include` filters by title after shadowing, exactly as in [`library`].
+/// - A root that does not exist, holds no books, or is left with none after
+///   shadowing and filtering is **not returned**. A missing root is logged.
+///
+/// Titles an include-list names that no library provides are not attached to
+/// any library — there is none they belong to. Ask [`missing_titles`] for them.
+pub fn libraries(roots: &[PathBuf], include: Option<&[String]>) -> Vec<Library> {
+    let wanted: Option<HashSet<&str>> = include.map(|w| w.iter().map(String::as_str).collect());
     // Titles claimed by an EARLIER root. Filled after each root is processed, so
-    // that duplicates *within* one root are both kept.
+    // that duplicates *within* one root are both kept. Claimed before the
+    // include-list filters, so a filtered-out book still shadows later copies.
     let mut claimed: HashSet<String> = HashSet::new();
+    let mut found: Vec<(usize, PathBuf, Vec<Book>)> = Vec::new();
 
     for (index, root) in roots.iter().enumerate() {
         if !root.is_dir() {
             tracing::info!(root = %root.display(), "book root does not exist; skipping");
             continue;
         }
-        let mut in_root = discover_root(root, index);
-        in_root.retain(|b| !claimed.contains(&b.title));
-        for b in &in_root {
+        let mut books = discover_root(root, index);
+        books.retain(|b| !claimed.contains(&b.title));
+        for b in &books {
             claimed.insert(b.title.clone());
         }
-        books.append(&mut in_root);
+        if let Some(set) = &wanted {
+            books.retain(|b| set.contains(b.title.as_str()));
+        }
+        if books.is_empty() {
+            continue;
+        }
+        books.sort_by(|a, b| by_title(&a.title, &b.title));
+        let canonical = std::fs::canonicalize(root).unwrap_or_else(|_| root.clone());
+        found.push((index, canonical, books));
     }
 
-    let mut entries: Vec<Entry> = match include {
-        None => books.into_iter().map(Entry::Book).collect(),
-        Some(wanted) => {
-            let set: HashSet<&str> = wanted.iter().map(String::as_str).collect();
-            let mut kept: Vec<Entry> = books
-                .into_iter()
-                .filter(|b| set.contains(b.title.as_str()))
-                .map(Entry::Book)
-                .collect();
-            for title in wanted {
-                if !kept.iter().any(|e| e.title() == title) {
-                    kept.push(Entry::Missing {
-                        title: title.clone(),
-                    });
-                }
-            }
-            kept
+    let paths: Vec<&Path> = found.iter().map(|(_, p, _)| p.as_path()).collect();
+    let names = library_names(&paths);
+    found
+        .into_iter()
+        .zip(names)
+        .map(|((root_index, root, books), name)| Library {
+            name,
+            root,
+            root_index,
+            books,
+        })
+        .collect()
+}
+
+/// The titles an include-list names that none of `libraries` provides, in
+/// include-list order and without repeats. Empty when there is no list.
+///
+/// Pure over its arguments, so it agrees with whatever [`libraries`] returned.
+pub fn missing_titles(libraries: &[Library], include: Option<&[String]>) -> Vec<String> {
+    let Some(wanted) = include else {
+        return Vec::new();
+    };
+    let present: HashSet<&str> = libraries
+        .iter()
+        .flat_map(|l| l.books.iter().map(|b| b.title.as_str()))
+        .collect();
+    let mut seen: HashSet<&str> = HashSet::new();
+    wanted
+        .iter()
+        .filter(|t| !present.contains(t.as_str()) && seen.insert(t.as_str()))
+        .cloned()
+        .collect()
+}
+
+/// Build the library as one flat list: every root in order, duplicates
+/// shadowed, an optional include-list applied, sorted alphabetically by title.
+///
+/// This is [`libraries`] flattened, plus an [`Entry::Missing`] for each of
+/// [`missing_titles`]; use [`libraries`] when the root a book came from
+/// matters for display.
+///
+/// `include` is a list of **titles**; `None` means everything. A root that does
+/// not exist is skipped with a log line — not silently (a typo or an unmounted
+/// NFS root should leave a trace) and not fatally (a package that is not
+/// resolved on this machine must not stop the viewer).
+pub fn library(roots: &[PathBuf], include: Option<&[String]>) -> Vec<Entry> {
+    let libs = libraries(roots, include);
+    let missing = missing_titles(&libs, include);
+    let mut entries: Vec<Entry> = libs
+        .into_iter()
+        .flat_map(|l| l.books)
+        .map(Entry::Book)
+        .chain(missing.into_iter().map(|title| Entry::Missing { title }))
+        .collect();
+    // Stable, so two same-titled books in one root keep their directory order.
+    entries.sort_by(|a, b| by_title(a.title(), b.title()));
+    entries
+}
+
+/// Alphabetical by title. Case-insensitive first so "gpui" and "GPUI" sit
+/// together, with a case-sensitive tiebreak so the order is total (and so the
+/// page is stable between requests, which matters because it is regenerated
+/// on every one).
+fn by_title(a: &str, b: &str) -> std::cmp::Ordering {
+    a.to_lowercase()
+        .cmp(&b.to_lowercase())
+        .then_with(|| a.cmp(b))
+}
+
+/// A display name per root: the directory name, lengthened by one parent at a
+/// time for exactly the roots that still collide, until every name is unique
+/// or a root runs out of parents (then its full path).
+fn library_names(roots: &[&Path]) -> Vec<String> {
+    let parts: Vec<Vec<String>> = roots
+        .iter()
+        .map(|r| {
+            r.components()
+                .filter_map(|c| match c {
+                    std::path::Component::Normal(s) => Some(s.to_string_lossy().into_owned()),
+                    _ => None,
+                })
+                .collect()
+        })
+        .collect();
+    let tail = |i: usize, depth: usize| -> String {
+        let p = &parts[i];
+        if p.is_empty() || depth > p.len() {
+            roots[i].display().to_string()
+        } else {
+            p[p.len() - depth..].join("/")
         }
     };
-
-    // Alphabetical by title. Case-insensitive first so "gpui" and "GPUI" sit
-    // together, with a case-sensitive tiebreak so the order is total (and so the
-    // page is stable between requests, which matters because it is regenerated
-    // on every one).
-    entries.sort_by(|a, b| {
-        a.title()
-            .to_lowercase()
-            .cmp(&b.title().to_lowercase())
-            .then_with(|| a.title().cmp(b.title()))
-    });
-    entries
+    let mut depth = vec![1; roots.len()];
+    loop {
+        let names: Vec<String> = (0..roots.len()).map(|i| tail(i, depth[i])).collect();
+        let mut grew = false;
+        for i in 0..roots.len() {
+            let collides = (0..roots.len()).any(|j| j != i && names[j] == names[i]);
+            if collides && depth[i] <= parts[i].len() {
+                depth[i] += 1;
+                grew = true;
+            }
+        }
+        if !grew {
+            return names;
+        }
+    }
 }
 
 /// Resolve one book by its **URL key** — root index plus directory name.
@@ -834,5 +955,200 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let cli = vec![tmp.path().to_path_buf()];
         assert_eq!(roots(&cli), cli);
+    }
+
+    // ---- libraries (#9) -------------------------------------------------
+
+    fn names(libs: &[Library]) -> Vec<&str> {
+        libs.iter().map(|l| l.name.as_str()).collect()
+    }
+
+    fn lib_titles(lib: &Library) -> Vec<&str> {
+        lib.books.iter().map(|b| b.title.as_str()).collect()
+    }
+
+    /// `<tmp>/<rel>` as a root directory, created.
+    fn root(tmp: &Path, rel: &str) -> PathBuf {
+        let r = tmp.join(rel);
+        std::fs::create_dir_all(&r).unwrap();
+        r
+    }
+
+    #[test]
+    fn each_root_is_its_own_library_in_search_path_order_with_books_sorted_by_title() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mine = root(tmp.path(), "mine");
+        let shipped = root(tmp.path(), "shipped");
+        book(&mine, "z", "[book]\ntitle = \"zeta\"\n");
+        book(&mine, "a", "[book]\ntitle = \"Alpha\"\n");
+        book(&shipped, "m", "[book]\ntitle = \"middle\"\n");
+        let libs = libraries(&[shipped.clone(), mine.clone()], None);
+        assert_eq!(
+            names(&libs),
+            vec!["shipped", "mine"],
+            "path order, not alphabetical"
+        );
+        assert_eq!(lib_titles(&libs[1]), vec!["Alpha", "zeta"]);
+        assert_eq!(libs[0].root_index, 0);
+        assert_eq!(libs[1].root_index, 1);
+        assert!(libs[1].books.iter().all(|b| b.root_index == 1));
+        assert_eq!(libs[1].root, std::fs::canonicalize(&mine).unwrap());
+    }
+
+    #[test]
+    fn a_later_library_loses_only_the_titles_an_earlier_one_already_has() {
+        let tmp = tempfile::tempdir().unwrap();
+        let user = root(tmp.path(), "user");
+        let pkg = root(tmp.path(), "pkg");
+        book(
+            &user,
+            "gpui",
+            "[book]\ntitle = \"gpui\"\ndescription = \"mine\"\n",
+        );
+        book(
+            &pkg,
+            "gpui",
+            "[book]\ntitle = \"gpui\"\ndescription = \"shipped\"\n",
+        );
+        book(&pkg, "guide", "[book]\ntitle = \"Guide\"\n");
+        let libs = libraries(&[user, pkg], None);
+        assert_eq!(lib_titles(&libs[0]), vec!["gpui"]);
+        assert_eq!(libs[0].books[0].description, "mine");
+        assert_eq!(
+            lib_titles(&libs[1]),
+            vec!["Guide"],
+            "the shadowed copy is gone"
+        );
+    }
+
+    #[test]
+    fn a_library_left_empty_by_shadowing_is_hidden_and_keeps_later_indices() {
+        let tmp = tempfile::tempdir().unwrap();
+        let a = root(tmp.path(), "a");
+        let b = root(tmp.path(), "b");
+        let c = root(tmp.path(), "c");
+        book(&a, "gpui", "[book]\ntitle = \"gpui\"\n");
+        book(&b, "gpui", "[book]\ntitle = \"gpui\"\n");
+        book(&c, "other", "[book]\ntitle = \"other\"\n");
+        let libs = libraries(&[a, b, c], None);
+        assert_eq!(names(&libs), vec!["a", "c"]);
+        assert_eq!(
+            libs[1].root_index, 2,
+            "an index is a URL segment and never renumbers"
+        );
+    }
+
+    #[test]
+    fn missing_and_bookless_roots_are_not_libraries() {
+        let tmp = tempfile::tempdir().unwrap();
+        let empty = root(tmp.path(), "empty");
+        std::fs::create_dir_all(empty.join("not-a-book")).unwrap();
+        let real = root(tmp.path(), "real");
+        book(&real, "gpui", "[book]\ntitle = \"gpui\"\n");
+        let libs = libraries(&[tmp.path().join("nope"), empty, real], None);
+        assert_eq!(names(&libs), vec!["real"]);
+        assert_eq!(libs[0].root_index, 2);
+        assert!(libraries(&[tmp.path().join("nope")], None).is_empty());
+    }
+
+    #[test]
+    fn two_same_titled_books_in_one_library_are_both_kept() {
+        let tmp = tempfile::tempdir().unwrap();
+        book(tmp.path(), "gpui-a", "[book]\ntitle = \"gpui\"\n");
+        book(tmp.path(), "gpui-b", "[book]\ntitle = \"gpui\"\n");
+        let libs = libraries(&[tmp.path().to_path_buf()], None);
+        let dirs: Vec<&str> = libs[0].books.iter().map(|b| b.dir_name.as_str()).collect();
+        assert_eq!(dirs, vec!["gpui-a", "gpui-b"]);
+        assert!(libs[0].books.iter().all(|b| b.ambiguous));
+    }
+
+    #[test]
+    fn the_include_list_filters_each_library_and_hides_one_it_empties() {
+        let tmp = tempfile::tempdir().unwrap();
+        let a = root(tmp.path(), "a");
+        let b = root(tmp.path(), "b");
+        book(&a, "x", "[book]\ntitle = \"keep\"\n");
+        book(&a, "y", "[book]\ntitle = \"drop\"\n");
+        book(&b, "z", "[book]\ntitle = \"drop too\"\n");
+        let include = vec!["keep".to_string(), "Typo".to_string(), "Typo".to_string()];
+        let libs = libraries(&[a, b], Some(&include));
+        assert_eq!(names(&libs), vec!["a"]);
+        assert_eq!(lib_titles(&libs[0]), vec!["keep"]);
+        assert_eq!(
+            missing_titles(&libs, Some(&include)),
+            vec!["Typo"],
+            "once, not twice"
+        );
+        assert!(missing_titles(&libs, None).is_empty());
+    }
+
+    #[test]
+    fn a_filtered_out_book_still_shadows_a_later_copy() {
+        // Shadowing precedes the include-list, as it always has: the flat list
+        // and the grouped one must agree on which copy is "the" book.
+        let tmp = tempfile::tempdir().unwrap();
+        let a = root(tmp.path(), "a");
+        let b = root(tmp.path(), "b");
+        book(&a, "g", "[book]\ntitle = \"gpui\"\n");
+        book(&b, "g", "[book]\ntitle = \"gpui\"\n");
+        let include = vec!["gpui".to_string()];
+        let libs = libraries(&[a, b], Some(&include));
+        assert_eq!(names(&libs), vec!["a"]);
+    }
+
+    #[test]
+    fn the_flat_library_is_the_grouped_one_flattened_and_resorted() {
+        let tmp = tempfile::tempdir().unwrap();
+        let a = root(tmp.path(), "a");
+        let b = root(tmp.path(), "b");
+        book(&a, "z", "[book]\ntitle = \"zeta\"\n");
+        book(&b, "a", "[book]\ntitle = \"alpha\"\n");
+        book(&b, "z", "[book]\ntitle = \"zeta\"\n");
+        let include = vec!["zeta".into(), "alpha".into(), "Typo".into()];
+        let flat = library(&[a, b], Some(&include));
+        assert_eq!(titles(&flat), vec!["alpha", "Typo", "zeta"]);
+        let Entry::Book(zeta) = &flat[2] else {
+            panic!()
+        };
+        assert_eq!(zeta.root_index, 0, "first root still wins");
+    }
+
+    #[test]
+    fn a_library_is_named_for_its_directory_however_the_root_was_spelled() {
+        let tmp = tempfile::tempdir().unwrap();
+        let docs = root(tmp.path(), "docs");
+        book(&docs, "g", "[book]\ntitle = \"gpui\"\n");
+        let slash = PathBuf::from(format!("{}/", docs.display()));
+        let dot = docs.join(".");
+        let dotdot = docs.join("g").join("..");
+        for spelling in [slash, dot, dotdot] {
+            let libs = libraries(std::slice::from_ref(&spelling), None);
+            assert_eq!(names(&libs), vec!["docs"], "{}", spelling.display());
+            assert_eq!(libs[0].root, std::fs::canonicalize(&docs).unwrap());
+        }
+    }
+
+    #[test]
+    fn same_named_roots_are_told_apart_by_their_parents() {
+        let tmp = tempfile::tempdir().unwrap();
+        let a = root(tmp.path(), "a/docs");
+        let b = root(tmp.path(), "b/docs");
+        book(&a, "x", "[book]\ntitle = \"x\"\n");
+        book(&b, "y", "[book]\ntitle = \"y\"\n");
+        assert_eq!(names(&libraries(&[a, b], None)), vec!["a/docs", "b/docs"]);
+    }
+
+    #[test]
+    fn library_names_grow_only_as_far_as_a_collision_needs() {
+        let p = |s: &str| PathBuf::from(s);
+        let roots = [p("/x/a/docs"), p("/y/a/docs"), p("/z/books"), p("/docs")];
+        let refs: Vec<&Path> = roots.iter().map(PathBuf::as_path).collect();
+        assert_eq!(
+            library_names(&refs),
+            vec!["x/a/docs", "y/a/docs", "books", "/docs"],
+            "a root out of parents shows its full path"
+        );
+        assert_eq!(library_names(&[Path::new("/")]), vec!["/"]);
+        assert_eq!(library_names(&[Path::new("/a/docs/")]), vec!["docs"]);
     }
 }

@@ -52,6 +52,39 @@ stacking, colon-separated list — else `$XDG_DATA_HOME/md-librarian/books`.
   explain a missing book, quiet enough that an unresolved package does not stop
   the viewer.
 
+### One library per root
+
+Each root is its own **library**, and the page shows them stacked in
+search-path order: the library's name, its full path, a rule, then its books.
+
+```text
+user-books                       <- the root's directory name
+/home/me/user-books
+────────────────────────────────
+[ Mine ] [ Notes ]
+
+books                            <- the rez package's appended root
+/opt/rez/md_librarian/0.3.0/books
+────────────────────────────────
+[ md-librarian ]
+```
+
+- **Shadowing still crosses libraries.** A book leaves a later library only
+  when an earlier library already has a book with the same title; everything
+  else stays where it was found. That is what keeps your copy of a book in
+  front of the one a package ships.
+- **A library with nothing to show is hidden**: a root that does not exist,
+  one with no books, and one whose every book was shadowed or filtered out.
+- **The name is the root's directory name**, read from the real directory, so
+  `--root .`, `--root ../books` and `--root ~/books/` are named for the
+  directory they point at. Two roots with the same name grow parent
+  directories until they differ — `/a/docs` and `/b/docs` show as `a/docs`
+  and `b/docs`. (The XDG default root and the rez package's root are both
+  called `books`; side by side they show as `md-librarian/books` and
+  `0.3.0/books`.)
+- The heading is shown even when there is only one library, so the page looks
+  the same however many roots you pass.
+
 Note the deliberate contrast with yaams-tk2's `YAAMS_BOOKS_DIR`, which names a
 *single* directory: `_PATH` is a list, `_DIR` is one. The suffix is the
 cardinality, so a machine mid-migration can carry both without confusion.
@@ -141,7 +174,9 @@ Two consequences worth knowing:
   thing that tells them apart.
 
 Titles are never used to build URLs. A book is addressed by **root index +
-directory name** (`/0/gpui/…`), percent-encoded to the unreserved set.
+directory name** (`/0/gpui/…`), percent-encoded to the unreserved set. The index
+is the root's position on the whole search path, so it is also which library
+the book is in, and it does not change when an earlier library is hidden.
 
 ## Covers
 
@@ -163,7 +198,8 @@ md-librarian --root /opt/books --include gpui --include "usdlite user guide"
 
 Roots select coarsely, the list refines. A listed title that no root provides is
 shown as a **dead card saying so** rather than silently dropped — a typo or an
-unmounted root should be visible.
+unmounted root should be visible. Such titles belong to no library, so they sit
+in a last section of their own, **Not found**, below the libraries.
 
 ## Opening straight onto a book
 
@@ -191,7 +227,8 @@ demand, and the fallback is the page that shows what *is* there.
 ## The page
 
 `/` serves a **shell**: a bar that never unloads, over an iframe. `/_grid` serves
-the library itself, which is what the frame shows first. Clicking a card loads
+the library itself — one section per library, scrolling as one page — which is
+what the frame shows first. Clicking a card loads
 the book *into the frame*, so the bar — carrying "← Library" and the current
 book's title — survives everything the book does, including a link out to an
 external site. In a window with no back button and no address bar, that bar is
@@ -245,6 +282,32 @@ for entry in library(&roots, None) {
     }
 }
 ```
+
+Grouped by root — what the library page shows — it is
+`libraries(&[PathBuf], Option<&[String]>) -> Vec<Library>`, with the include-list
+titles no root provides from
+`missing_titles(&[Library], Option<&[String]>) -> Vec<String>`:
+
+```rust
+use md_librarian::{Library, libraries, missing_titles, roots};
+
+let roots = roots(&[]);
+let include: Option<&[String]> = None;
+let libs: Vec<Library> = libraries(&roots, include);
+for lib in &libs {
+    // name: "docs", or "a/docs" when another root is also called docs.
+    println!("{}  ({}, root #{})", lib.name, lib.root.display(), lib.root_index);
+    for b in &lib.books {
+        println!("  {}", b.title);
+    }
+}
+for title in missing_titles(&libs, include) {
+    println!("{title} — not found in any root");
+}
+```
+
+`library` is exactly `libraries` flattened, plus an `Entry::Missing` per missing
+title, re-sorted by title. Use it when only *which* books matters.
 
 Serving is one call, and returns the URL to point a window at:
 
@@ -362,8 +425,9 @@ should be dropped once the underlying combination is repaired.
 ## What is tested, and what is a checklist
 
 Testable, and tested — over real HTTP against a temporary root, with no display:
-discovery and `build-dir`, the title fallback, first-root-wins shadowing, both
-copies of a same-titled pair, the include-list and its dead card, an unbuilt book
+discovery and `build-dir`, the title fallback, first-root-wins shadowing, one
+section per library in path order with empty and missing roots hidden, names
+for same-named roots, both copies of a same-titled pair, the include-list and its dead card, an unbuilt book
 listed but never linked, percent-encoded directory names, refusal to serve
 outside a book, and covers both real and generated.
 

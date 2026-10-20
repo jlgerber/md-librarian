@@ -6,7 +6,7 @@
 //! needs GTK and a display and can only be a manual checklist, while *this* half
 //! is testable — and is where all the decisions live.
 
-use md_librarian::{Book, Entry};
+use md_librarian::{Book, Entry, Library};
 
 /// Percent-encode one path segment to the unreserved set.
 ///
@@ -322,30 +322,50 @@ pub fn shell_document(entries: &[Entry], initial: Option<&Book>) -> String {
     )
 }
 
-/// The library page: one card per entry, already sorted by title.
-pub fn grid_document(entries: &[Entry]) -> String {
-    let cards = if entries.is_empty() {
+/// The library page: one section per [`Library`], in search-path order, each a
+/// heading (the library's name, its root path beneath it and as a tooltip), a
+/// rule, and that library's cards. `missing` — titles an include-list names
+/// that no root provides — follows as a last section of dead cards.
+///
+/// A heading is shown even when there is only one library, so the page reads
+/// the same however many roots are on the path. The page scrolls as a whole;
+/// libraries are never collapsed or put in their own scroll regions.
+pub fn grid_document(libraries: &[Library], missing: &[String]) -> String {
+    let sections = if libraries.is_empty() && missing.is_empty() {
         format!(
             "<p class=\"empty\">No books found. Point <code>{}</code> at a directory of \
              mdbooks — one subdirectory per book, each with its own <code>book.toml</code>.</p>",
             md_librarian::BOOK_PATH_VAR
         )
     } else {
-        entries.iter().map(card).collect::<Vec<_>>().join("")
+        let mut out: Vec<String> = libraries.iter().map(library_section).collect();
+        if !missing.is_empty() {
+            let cards: String = missing.iter().map(|t| missing_card(t)).collect();
+            out.push(format!(
+                "<section class=\"library missing\"><h2 class=\"name\">Not found</h2>\
+                 <p class=\"root\">named by the include-list, in no root</p>\
+                 <hr class=\"rule\"><div class=\"grid\">{cards}</div></section>"
+            ));
+        }
+        out.join("")
     };
 
     format!(
         "<!doctype html><html><head><meta charset=\"utf-8\"><title>Library</title>\
          <style>{style}\
          main{{padding:1.6rem;max-width:1100px;margin:0 auto}}\
-         h1{{font-size:1.35rem;margin:0 0 1.2rem;font-weight:600}}\
+         .library+.library{{margin-top:2.2rem}}\
+         .library .name{{font-size:1.2rem;margin:0;font-weight:600;color:#e6edf3}}\
+         .library .root{{color:#6e7681;font-size:.82em;margin:.15rem 0 0;\
+           font-family:ui-monospace,monospace;overflow-wrap:anywhere}}\
+         .rule{{border:0;border-top:1px solid #28313b;margin:.7rem 0 1rem}}\
          .grid{{display:grid;gap:1rem;\
            grid-template-columns:repeat(auto-fill,minmax(240px,1fr))}}\
          .card{{display:block;border:1px solid #28313b;border-radius:10px;\
            background:#161c24;overflow:hidden;transition:border-color .15s,transform .15s}}\
          a.card:hover{{border-color:#4b9fff;transform:translateY(-2px)}}\
          .card .body{{padding:.9rem 1rem 1.1rem}}\
-         .cover,img.cover{{display:block;width:100%;height:150px;background:#0f1419}}\
+         .cover,img.cover{{display:block;width:100%;height:150px;background:{bg}}}\
          img.cover{{object-fit:contain;padding:.5rem;box-sizing:border-box}}\
          .title{{font-weight:600;margin:0 0 .25rem}}\
          .desc{{color:#8b949e;margin:0}}\
@@ -353,9 +373,23 @@ pub fn grid_document(entries: &[Entry]) -> String {
          .dead{{opacity:.55}}\
          .why{{color:#d29922;font-size:.85em;margin:.35rem 0 0}}\
          .empty{{color:#8b949e}}\
-         </style></head><body><main><h1>Library</h1>\
-         <div class=\"grid\">{cards}</div></main></body></html>",
+         </style></head><body><main>{sections}</main></body></html>",
         style = style(),
+        bg = library_background_css(),
+    )
+}
+
+/// One library: heading, root path, rule, cards.
+fn library_section(lib: &Library) -> String {
+    let root = html_escape(&lib.root.display().to_string());
+    let cards: String = lib.books.iter().map(book_card).collect();
+    format!(
+        "<section class=\"library\" data-root=\"{index}\">\
+         <h2 class=\"name\" title=\"{root}\">{name}</h2>\
+         <p class=\"root\">{root}</p><hr class=\"rule\">\
+         <div class=\"grid\">{cards}</div></section>",
+        index = lib.root_index,
+        name = html_escape(&lib.name),
     )
 }
 
@@ -366,27 +400,26 @@ pub fn grid_document(entries: &[Entry]) -> String {
 /// provides are both rendered as inert `<div>`s that say why — listed, because
 /// hiding them makes a typo or an unmounted root indistinguishable from a book
 /// that was never asked for.
-fn card(entry: &Entry) -> String {
-    match entry {
-        Entry::Book(b) if b.is_built() => {
-            let cover = match &b.cover {
-                Some(_) => format!(
-                    "<img class=\"cover\" src=\"/_cover/{}/{}\" alt=\"\">",
-                    b.root_index,
-                    url_segment(&b.dir_name)
-                ),
-                None => generated_cover(&b.title),
-            };
-            format!(
-                "<a class=\"card\" href=\"{href}\">{cover}<div class=\"body\">\
+fn book_card(b: &Book) -> String {
+    if b.is_built() {
+        let cover = match &b.cover {
+            Some(_) => format!(
+                "<img class=\"cover\" src=\"/_cover/{}/{}\" alt=\"\">",
+                b.root_index,
+                url_segment(&b.dir_name)
+            ),
+            None => generated_cover(&b.title),
+        };
+        format!(
+            "<a class=\"card\" href=\"{href}\">{cover}<div class=\"body\">\
                  <p class=\"title\">{title}</p>{desc}{dir}</div></a>",
-                href = book_prefix(b),
-                title = html_escape(&b.title),
-                desc = description(&b.description),
-                dir = dir_line(b),
-            )
-        }
-        Entry::Book(b) => format!(
+            href = book_prefix(b),
+            title = html_escape(&b.title),
+            desc = description(&b.description),
+            dir = dir_line(b),
+        )
+    } else {
+        format!(
             "<div class=\"card dead\">{cover}<div class=\"body\">\
              <p class=\"title\">{title}</p>{desc}{dir}\
              <p class=\"why\">not built yet</p></div></div>",
@@ -394,15 +427,19 @@ fn card(entry: &Entry) -> String {
             title = html_escape(&b.title),
             desc = description(&b.description),
             dir = dir_line(b),
-        ),
-        Entry::Missing { title } => format!(
-            "<div class=\"card dead\">{cover}<div class=\"body\">\
-             <p class=\"title\">{t}</p>\
-             <p class=\"why\">not found in any root</p></div></div>",
-            cover = generated_cover(title),
-            t = html_escape(title),
-        ),
+        )
     }
+}
+
+/// The dead card for a title an include-list names that no root provides.
+fn missing_card(title: &str) -> String {
+    format!(
+        "<div class=\"card dead\">{cover}<div class=\"body\">\
+         <p class=\"title\">{t}</p>\
+         <p class=\"why\">not found in any root</p></div></div>",
+        cover = generated_cover(title),
+        t = html_escape(title),
+    )
 }
 
 fn description(desc: &str) -> String {
@@ -436,7 +473,7 @@ mod tests {
     #[test]
     fn the_library_page_and_the_shell_paint_their_body_with_the_library_background() {
         let body = format!("body{{margin:0;background:{}", library_background_css());
-        assert!(grid_document(&[]).contains(&body));
+        assert!(grid_document(&[], &[]).contains(&body));
         assert!(shell_document(&[], None).contains(&body));
     }
 
@@ -473,5 +510,30 @@ mod tests {
             shell_document(&[], None).contains(SHELL_SCRIPT),
             "inserted as-is, not through a format template that would halve its braces"
         );
+    }
+
+    #[test]
+    fn a_library_name_and_root_cannot_break_out_of_the_heading() {
+        let lib = Library {
+            name: "a\"<b>".into(),
+            root: std::path::PathBuf::from("/x/\" onmouseover=alert(1) \"/a\"<b>"),
+            root_index: 3,
+            books: Vec::new(),
+        };
+        let page = grid_document(&[lib], &[]);
+        assert!(page.contains(">a&quot;&lt;b&gt;</h2>"));
+        assert!(
+            !page.contains("\" onmouseover"),
+            "the tooltip stays one attribute"
+        );
+        assert!(page.contains("data-root=\"3\""));
+    }
+
+    #[test]
+    fn no_libraries_and_nothing_missing_is_the_actionable_empty_page() {
+        assert!(grid_document(&[], &[]).contains("class=\"empty\""));
+        let only_missing = grid_document(&[], &["Typo".to_string()]);
+        assert!(!only_missing.contains("class=\"empty\""));
+        assert!(only_missing.contains("not found in any root"));
     }
 }
