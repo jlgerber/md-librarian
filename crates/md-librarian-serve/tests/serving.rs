@@ -87,9 +87,10 @@ fn the_shell_is_a_bar_over_a_frame_showing_the_grid() {
 fn the_frame_is_not_painted_white_between_pages() {
     // Every chapter is a separate document, so the browser blanks the frame on
     // each navigation and the frame's own background is what shows through. A
-    // white flash against a dark book is the worst case, so the default is grey
-    // — and the shell adopts the book's real background after each load, which
-    // is only possible because the two share an origin.
+    // white flash against a dark book is the worst case, so the default is the
+    // library's own background — and the shell adopts the book's real
+    // background after each load, which is only possible because the two share
+    // an origin.
     let tmp = tempfile::tempdir().unwrap();
     book(
         tmp.path(),
@@ -105,7 +106,11 @@ fn the_frame_is_not_painted_white_between_pages() {
         "the frame must not paint white between pages"
     );
     assert!(
-        shell.contains("getComputedStyle(b).backgroundColor"),
+        shell.contains("border:0;background:#0f1419"),
+        "the frame defaults to the library's background (#8)"
+    );
+    assert!(
+        shell.contains("getComputedStyle(els[j]).backgroundColor"),
         "the shell must adopt the book's own background after a load"
     );
 }
@@ -416,7 +421,7 @@ fn the_library_button_hides_itself_on_the_library_page() {
         "the frame's load handler decides from the frame's own path"
     );
     assert!(
-        shell.contains("catch(e){k.className='';return}"),
+        shell.contains("catch(e){cur=null;k.className='';return}"),
         "an external page, whose path cannot be read, shows the way back"
     );
 }

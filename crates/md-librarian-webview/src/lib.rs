@@ -89,11 +89,14 @@
 //!     0.12 0.12 0.12 0.12 0.12 0.12 0.12 0.12 0.12 0.12 0.12 0.12 0.12 0.12 0.12 0.12
 //! ```
 //!
-//! That is also why **no webview background colour is set** — the obvious
-//! companion tweak, and unnecessary here: WebKit renders while unmapped and
-//! composites on map, so there is no residual gap for a colour to cover,
-//! and any fixed choice would have been wrong for half the pages a host
-//! shows.
+//! That is also why **no webview background colour is set by default** —
+//! the obvious companion tweak, and unnecessary for the first paint: WebKit
+//! renders while unmapped and composites on map, so there is no residual
+//! gap for a colour to cover, and any fixed choice would have been wrong
+//! for half the pages a host shows. A host that *does* know what it shows
+//! sets [`WebWindowOptions::background`], which covers what the reveal
+//! cannot: the native window's own paint (a resize, a fallback reveal of a
+//! slow page) and the webview's base colour behind every later document.
 //!
 //! What this does and does not change:
 //!
@@ -262,7 +265,7 @@
 //! use md_librarian_webview::{WebContent, WebWindow, WebWindowOptions};
 //!
 //! let help = WebWindow::open(
-//!     WebWindowOptions { title: "usdlite help".into(), width: 1024, height: 768 },
+//!     WebWindowOptions { title: "usdlite help".into(), width: 1024, height: 768, background: None },
 //!     WebContent::Url("https://example.com/docs/index.html".into()),
 //! )?;
 //! // Later, e.g. from a menu action:
@@ -324,6 +327,16 @@ pub struct WebWindowOptions {
     pub title: String,
     pub width: u32,
     pub height: u32,
+    /// What the window paints wherever no page has yet: an opaque RGB colour
+    /// for the native window *and* the webview behind the document, or `None`
+    /// for the toolkit defaults (WebKit's is white).
+    ///
+    /// Set it to the colour of what the window shows — `md-librarian` passes
+    /// its library background — so a page's blank moments match it. The
+    /// default stays `None` because this crate cannot know what a host shows;
+    /// see "Visibility" in the crate docs for why the first paint does not
+    /// need it.
+    pub background: Option<(u8, u8, u8)>,
 }
 
 impl Default for WebWindowOptions {
@@ -332,6 +345,7 @@ impl Default for WebWindowOptions {
             title: "Help".into(),
             width: 1024,
             height: 768,
+            background: None,
         }
     }
 }
@@ -645,7 +659,13 @@ fn create_window(
     // run callback is handed — which is why windows can be created from
     // inside a loop that is already running, and therefore why one loop can
     // serve every window in the process.
-    let window = WindowBuilder::new()
+    let mut window = WindowBuilder::new();
+    if let Some((r, g, b)) = opts.background {
+        // The GTK window's own paint, under the webview: what a resize gap
+        // or a reveal before the first page shows (issue #8).
+        window = window.with_background_color((r, g, b, 255));
+    }
+    let window = window
         .with_title(&opts.title)
         .with_inner_size(tao::dpi::LogicalSize::new(
             f64::from(opts.width),
@@ -741,6 +761,23 @@ fn create_window(
     let webview = builder
         .build_gtk(vbox)
         .map_err(|e| anyhow::anyhow!("webview build: {e}"))?;
+    // The webview's base colour — what WebKit paints behind a document that
+    // has not painted its own background yet (issue #8). Set here, before
+    // this GTK iteration returns, so nothing can have painted with the
+    // default first.
+    //
+    // NOT `WebViewBuilder::with_background_color`: wry 0.53's GTK backend
+    // hands its `u8` channels straight to `gdk::RGBA::new`, whose channels
+    // are `0.0..=1.0`, so every nonzero channel saturates and a dark colour
+    // comes out **white** — the exact flash this exists to remove.
+    if let Some(rgb) = opts.background {
+        use webkit2gtk::WebViewExt as _;
+        use wry::WebViewExtUnix as _;
+        let (r, g, b) = unit_rgb(rgb);
+        webview
+            .webview()
+            .set_background_color(&gdk::RGBA::new(r, g, b, 1.0));
+    }
 
     // The second sender: the bound on the hidden phase.
     //
@@ -836,6 +873,16 @@ fn close_window(key: WindowKey, state: &mut LoopState) {
     // + `Display::flush` v0.22.3 needed here existed only because the
     // per-window loop had stopped iterating by this point.
     drop(live);
+}
+
+/// An 8-bit RGB colour as GDK's `0.0..=1.0` channels.
+///
+/// Its own function because getting this conversion wrong is silent and
+/// looks like the opposite of what was asked: wry 0.53 skips the division,
+/// which turns `#0f1419` into white (see [`create_window`]).
+fn unit_rgb((r, g, b): (u8, u8, u8)) -> (f64, f64, f64) {
+    let unit = |c: u8| f64::from(c) / 255.0;
+    (unit(r), unit(g), unit(b))
 }
 
 /// A live floating webview window. Cheap handle: commands go through the
@@ -975,5 +1022,25 @@ impl Drop for WebWindow {
             return;
         }
         let _ = ack_rx.recv_timeout(CLOSE_ACK_TIMEOUT);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unit_rgb_divides_each_channel_by_255_so_a_dark_colour_stays_dark() {
+        let (r, g, b) = unit_rgb((0x0f, 0x14, 0x19));
+        assert!((r - 15.0 / 255.0).abs() < 1e-12);
+        assert!((g - 20.0 / 255.0).abs() < 1e-12);
+        assert!((b - 25.0 / 255.0).abs() < 1e-12);
+        assert!(r < 0.1 && g < 0.1 && b < 0.1, "not saturated to white");
+    }
+
+    #[test]
+    fn unit_rgb_maps_the_extremes_to_zero_and_one() {
+        assert_eq!(unit_rgb((0, 0, 0)), (0.0, 0.0, 0.0));
+        assert_eq!(unit_rgb((255, 255, 255)), (1.0, 1.0, 1.0));
     }
 }

@@ -96,6 +96,9 @@ pub fn run(cli: ServeArgs) -> anyhow::Result<()> {
             title: "Books".into(),
             width: 1100,
             height: 800,
+            // The library's own colour, so nothing the window paints before a
+            // page does is white (#8).
+            background: Some(md_librarian_serve::shell::LIBRARY_BACKGROUND),
         },
         md_librarian_webview::WebContent::Url(url.clone()),
     ) {

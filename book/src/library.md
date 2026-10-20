@@ -197,6 +197,19 @@ book's title — survives everything the book does, including a link out to an
 external site. In a window with no back button and no address bar, that bar is
 the only way home.
 
+Nothing the window shows is ever white unless a book is. The library's
+background (`md_librarian_serve::shell::LIBRARY_BACKGROUND`, `#0f1419`) is
+what the native window, the webview, the shell and the frame all paint
+before a page does. Between two chapters of one book the frame shows that
+book's own background, read after it first loads (from `<html>`, where mdBook
+puts it, else `<body>`). Opening a book, returning
+to the library, or following a link into another book **veils** the frame
+instead: the old page is hidden at once, the frame takes the colour of
+where it is going (that book's, if it has been seen; otherwise the
+library's), and the new page fades in once it has loaded — so neither the
+previous book's colour nor a half-styled page shows in between. A veil that
+is never lifted by a load lifts itself after 1.5 s.
+
 The shell is regenerated **on every request**. A book built while the viewer is
 open appears on refresh, read-only roots (an NFS mount, or a root inside a rez
 package) work, and there is no written page to go stale or to overwrite someone
@@ -347,6 +360,6 @@ listed but never linked, percent-encoded directory names, refusal to serve
 outside a book, and covers both real and generated.
 
 Not testable, so keep it as a manual checklist: opening the window, clicking a
-card, following an external link and returning via the bar, close-then-reopen,
+card (and that no white shows on the way in or back out), following an external link and returning via the bar, close-then-reopen,
 the no-books-anywhere case, and the parent-dies case — both a graceful exit and
 `kill -9`.

@@ -240,10 +240,10 @@ pub fn install(book: &Book, root: &Path) -> anyhow::Result<Installed> {
 
     let mtime = |p: &Path| std::fs::metadata(p).and_then(|m| m.modified()).ok();
     let src_index = book.build_dir.join("index.html");
-    if let (Some(s), Some(d)) = (mtime(&src_index), mtime(&dest.join(rel).join("index.html"))) {
-        if d >= s {
-            return Ok(Installed::UpToDate);
-        }
+    if let (Some(s), Some(d)) = (mtime(&src_index), mtime(&dest.join(rel).join("index.html")))
+        && d >= s
+    {
+        return Ok(Installed::UpToDate);
     }
 
     if existing {
@@ -251,10 +251,10 @@ pub fn install(book: &Book, root: &Path) -> anyhow::Result<Installed> {
     }
     std::fs::create_dir_all(&dest)?;
     std::fs::copy(book.dir.join("book.toml"), dest.join("book.toml"))?;
-    if let Some(cover) = &book.cover {
-        if let Some(name) = cover.file_name() {
-            std::fs::copy(cover, dest.join(name))?;
-        }
+    if let Some(cover) = &book.cover
+        && let Some(name) = cover.file_name()
+    {
+        std::fs::copy(cover, dest.join(name))?;
     }
     copy_tree(&book.build_dir, &dest.join(rel))?;
     Ok(Installed::Copied)

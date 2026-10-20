@@ -86,6 +86,7 @@ fn open(title: &str, color: &str, heading: &str) -> anyhow::Result<WebWindow> {
             title: format!("{TAG} — {title}"),
             width: 640,
             height: 400,
+            background: None,
         },
         page(color, heading),
     )?;
@@ -171,6 +172,7 @@ fn degraded() -> anyhow::Result<()> {
                 title: format!("{TAG} — degraded"),
                 width: 320,
                 height: 200,
+                background: None,
             },
             page("#000000", "unreachable"),
         );

@@ -81,7 +81,7 @@ cargo run -p md-librarian-webview --example first_paint drop-early # #47: drop w
 use md_librarian_webview::{WebContent, WebWindow, WebWindowOptions};
 
 let help = WebWindow::open(
-    WebWindowOptions { title: "usdlite help".into(), width: 1024, height: 768 },
+    WebWindowOptions { title: "usdlite help".into(), width: 1024, height: 768, background: None },
     WebContent::Url("file:///opt/usdlite/docs/index.html".into()),
 )?;
 
@@ -195,10 +195,12 @@ unfilled backing store is 0.21:
 ```
 
 The window is painted the moment it appears, and stays painted. That is
-also why **no webview background colour was set** — the obvious companion
-tweak, and unnecessary: WebKit renders while unmapped and composites on
-map, so there is no residual gap for a colour to cover, and any fixed
-choice would have been wrong for half the pages a host shows.
+also why **no background colour is set by default** — the obvious
+companion tweak, and unnecessary for the first paint: WebKit renders while
+unmapped and composites on map, so there is no residual gap for a colour
+to cover, and any fixed choice would have been wrong for half the pages a
+host shows. A host that knows what it shows can still set one; see the
+next section.
 
 The other modes cover the bound and the interactions: `stalled` (a
 stylesheet that never arrives — window at +1512 ms, i.e. the fallback),
@@ -209,6 +211,48 @@ still armed — `Drop` returns in ~500 µs and no window appears through the
 deadline and beyond).
 
 [#47]: https://github.com/jlgerber/gpui-yaams/issues/47
+
+### Background colour
+
+`WebWindowOptions::background` is what the window paints wherever no page
+has yet — the native GTK window *and* the webview's base colour behind each
+document. `None` (the default) keeps the toolkit defaults, which for WebKit
+is white.
+
+```rust
+pub struct WebWindowOptions {
+    pub title: String,
+    pub width: u32,
+    pub height: u32,
+    pub background: Option<(u8, u8, u8)>, // opaque RGB
+}
+```
+
+```rust,ignore
+use md_librarian_webview::{WebContent, WebWindow, WebWindowOptions};
+
+// A dark docs site: nothing the window paints before a page does is white.
+let docs = WebWindow::open(
+    WebWindowOptions {
+        title: "docs".into(),
+        background: Some((0x0f, 0x14, 0x19)),
+        ..Default::default()
+    },
+    WebContent::Url("http://127.0.0.1:8000/".into()),
+)?;
+```
+
+The first reveal does not need it (see above). What it covers is
+everything after: a resize before the page re-lays out, a slow page shown by
+the 1.5 s fallback, and the blank WebKit paints behind a document that has
+not painted its own background yet. `md-librarian` sets it to the library's
+background (#8).
+
+wry's own `WebViewBuilder::with_background_color` is deliberately **not**
+used: in wry 0.53 its GTK backend passes the `u8` channels straight to
+`gdk::RGBA`, whose channels run `0.0..=1.0`, so every nonzero channel
+saturates and a dark colour comes out white. The crate sets the colour on
+the `webkit2gtk::WebView` itself instead.
 
 ### Host wiring
 

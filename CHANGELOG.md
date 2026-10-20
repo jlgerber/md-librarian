@@ -37,3 +37,18 @@ consumers pin.
   library crates are free of wry/tao/GTK by construction. Public API shapes
   and CLI flags are unchanged. Earlier history lives in gpui-yaams'
   CHANGELOG (0.22.0 through 0.27.0-beta.3).
+
+### Changed
+
+- **`WebWindowOptions::background`** (`Option<(u8, u8, u8)>`, default
+  `None`): what the window paints before a page does. A struct literal that
+  names every field now needs it, or `..Default::default()`.
+
+### Fixed
+
+- **No white flash opening a book or returning to the library** (#8). The
+  window, the webview and the frame all paint the library's background
+  before a page does, and moving between books or back to the library hides
+  the frame until the new page has loaded, then fades it in. The frame now
+  adopts an mdBook's own background between chapters (it read only `<body>`,
+  which mdBook leaves transparent).
