@@ -41,7 +41,8 @@ book if it holds a `book.toml`; its built output is found beside it, honouring
 Roots come from `--root`, else the **`MD_LIBRARIAN_PATH`** environment
 variable (a colon-separated list), else `$XDG_DATA_HOME/md-librarian/books`.
 Roots stack and the first one wins, so a user's own copy of a book shadows one
-shipped by a package. A book is identified by its `[book] title`, falling back
+shipped by a package. Each root is shown as its own library, headed by the
+root's directory name. A book is identified by its `[book] title`, falling back
 to the directory name.
 
 ### Covers

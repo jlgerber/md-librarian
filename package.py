@@ -90,6 +90,8 @@ def commands():
     # rendered HTML): {root}/books/md-librarian/ holds the book.toml beside its
     # output, which is what `md-librarian` scans for. So a resolve opens with
     # something in it rather than an empty library.
+    # {root}/books/library.toml names that root's library "md-librarian" on
+    # the page.
     #
     # APPENDED, never prepended. The search path is first-root-wins, so
     # appending puts the shipped copy LAST — a user's own root, or a site's,
@@ -130,11 +132,13 @@ tests = {
     },
     # The shipped book is actually a discoverable ROOT (book.toml beside its
     # output) and is on the search path — the two halves of "a resolve opens
-    # with something in it". Cheap and display-free, so it runs by default.
+    # with something in it" — and the root names its library "md-librarian"
+    # rather than "books". Cheap and display-free, so it runs by default.
     "books_root": {
         "command": (
             "test -f \"$REZ_MD_LIBRARIAN_ROOT/books/md-librarian/book.toml\" "
             "&& test -f \"$REZ_MD_LIBRARIAN_ROOT/books/md-librarian/html/index.html\" "
+            "&& grep -qx 'name = \"md-librarian\"' \"$REZ_MD_LIBRARIAN_ROOT/books/library.toml\" "
             "&& case \":$MD_LIBRARIAN_PATH:\" in *\":$REZ_MD_LIBRARIAN_ROOT/books:\"*) true ;; "
             "*) echo \"books root not on MD_LIBRARIAN_PATH\" >&2; false ;; esac"
         ),

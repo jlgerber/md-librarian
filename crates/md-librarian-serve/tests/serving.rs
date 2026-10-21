@@ -421,3 +421,162 @@ fn the_library_button_hides_itself_on_the_library_page() {
         "an external page, whose path cannot be read, shows the way back"
     );
 }
+
+/// The byte offset of `needle` in `hay`, or a panic naming it.
+fn at(hay: &str, needle: &str) -> usize {
+    hay.find(needle)
+        .unwrap_or_else(|| panic!("{needle:?} not on the page: {hay}"))
+}
+
+#[test]
+fn each_root_is_a_library_section_with_its_own_cards_in_path_order() {
+    let tmp = tempfile::tempdir().unwrap();
+    let user = tmp.path().join("user-books");
+    let pkg = tmp.path().join("shipped");
+    book(
+        &user,
+        "mine",
+        "[book]\ntitle = \"Mine\"\n",
+        Some(("book", "<h1>m</h1>")),
+    );
+    book(
+        &pkg,
+        "guide",
+        "[book]\ntitle = \"Guide\"\n",
+        Some(("book", "<h1>g</h1>")),
+    );
+    let base = serve(vec![user.clone(), pkg.clone()], None);
+
+    let (_, grid) = get(&base, "/_grid");
+    assert_eq!(grid.matches("<section class=\"library\"").count(), 2);
+    let first = at(&grid, "data-root=\"0\"");
+    let mine = at(&grid, "href=\"/0/mine/\"");
+    let second = at(&grid, "data-root=\"1\"");
+    let guide = at(&grid, "href=\"/1/guide/\"");
+    assert!(
+        first < mine && mine < second && second < guide,
+        "heading, then that library's cards, in search-path order"
+    );
+    assert!(grid.contains(">user-books</h2>") && grid.contains(">shipped</h2>"));
+    assert!(
+        grid.contains(&format!("title=\"{}\"", pkg.display())),
+        "the full root path is the heading's tooltip"
+    );
+    assert!(
+        grid.contains("<hr class=\"rule\">"),
+        "a rule under each heading"
+    );
+
+    let (status, _) = get(&base, "/1/guide/");
+    assert_eq!(status, 200, "book URLs are still root index + directory");
+}
+
+#[test]
+fn a_single_library_still_has_its_heading() {
+    let tmp = tempfile::tempdir().unwrap();
+    let docs = tmp.path().join("docs");
+    book(
+        &docs,
+        "g",
+        "[book]\ntitle = \"g\"\n",
+        Some(("book", "<h1>g</h1>")),
+    );
+    let base = serve(vec![docs], None);
+    let (_, grid) = get(&base, "/_grid");
+    assert_eq!(grid.matches("<section class=\"library\"").count(), 1);
+    assert!(grid.contains(">docs</h2>"));
+}
+
+#[test]
+fn same_named_roots_get_headings_that_tell_them_apart() {
+    let tmp = tempfile::tempdir().unwrap();
+    let a = tmp.path().join("a/docs");
+    let b = tmp.path().join("b/docs");
+    book(
+        &a,
+        "x",
+        "[book]\ntitle = \"x\"\n",
+        Some(("book", "<h1>x</h1>")),
+    );
+    book(
+        &b,
+        "y",
+        "[book]\ntitle = \"y\"\n",
+        Some(("book", "<h1>y</h1>")),
+    );
+    let base = serve(vec![a, b], None);
+    let (_, grid) = get(&base, "/_grid");
+    assert!(grid.contains(">a/docs</h2>") && grid.contains(">b/docs</h2>"));
+    assert!(!grid.contains(">docs</h2>"));
+}
+
+#[test]
+fn a_root_with_nothing_to_show_gets_no_section_and_no_index_shift() {
+    let tmp = tempfile::tempdir().unwrap();
+    let empty = tmp.path().join("empty");
+    std::fs::create_dir_all(&empty).unwrap();
+    let shadowed = tmp.path().join("shadowed");
+    let real = tmp.path().join("real");
+    book(
+        &real,
+        "g",
+        "[book]\ntitle = \"gpui\"\n",
+        Some(("book", "<h1>g</h1>")),
+    );
+    book(
+        &shadowed,
+        "g",
+        "[book]\ntitle = \"gpui\"\n",
+        Some(("book", "<h1>g</h1>")),
+    );
+    let base = serve(vec![tmp.path().join("nope"), empty, real, shadowed], None);
+    let (_, grid) = get(&base, "/_grid");
+    assert_eq!(grid.matches("<section class=\"library\"").count(), 1);
+    assert!(
+        grid.contains("data-root=\"2\""),
+        "only the root with a book to show"
+    );
+    assert!(grid.contains(">real</h2>"));
+    assert!(
+        grid.contains("href=\"/2/g/\""),
+        "the index is the path position"
+    );
+}
+
+#[test]
+fn missing_titles_follow_the_libraries_as_their_own_section() {
+    let tmp = tempfile::tempdir().unwrap();
+    let docs = tmp.path().join("docs");
+    book(
+        &docs,
+        "g",
+        "[book]\ntitle = \"gpui\"\n",
+        Some(("book", "<h1>g</h1>")),
+    );
+    let base = serve(vec![docs], Some(vec!["gpui".into(), "Typo".into()]));
+    let (_, grid) = get(&base, "/_grid");
+    let lib = at(&grid, "data-root=\"0\"");
+    let section = at(&grid, "class=\"library missing\"");
+    let typo = at(&grid, ">Typo<");
+    assert!(lib < section && section < typo);
+}
+
+#[test]
+fn a_library_toml_name_is_the_heading() {
+    let tmp = tempfile::tempdir().unwrap();
+    let r = tmp.path().join("books");
+    book(
+        &r,
+        "g",
+        "[book]\ntitle = \"g\"\n",
+        Some(("book", "<h1>g</h1>")),
+    );
+    std::fs::write(r.join("library.toml"), "name = \"md-librarian\"\n").unwrap();
+    let base = serve(vec![r.clone()], None);
+    let (_, grid) = get(&base, "/_grid");
+    assert!(grid.contains(">md-librarian</h2>"));
+    assert!(
+        grid.contains(&format!("title=\"{}\"", r.display())),
+        "the path is still there to say where it lives"
+    );
+}

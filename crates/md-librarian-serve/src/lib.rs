@@ -30,6 +30,10 @@
 //! titles are display text, may contain anything, and two books may share one.
 //! The `_`-prefixed routes cannot collide with a book, because a root index is
 //! always digits.
+//!
+//! The root index is the root's position on the **whole** search path, so a
+//! book's URL does not move when the page groups books by library (#9) or when
+//! an earlier library is hidden for having nothing left to show.
 
 pub mod shell;
 
@@ -37,7 +41,7 @@ use std::path::{Path, PathBuf};
 use std::thread;
 
 use anyhow::{Context, Result};
-use md_librarian::{book_at, library};
+use md_librarian::{book_at, libraries, library, missing_titles};
 use tiny_http::{Header, Response, Server as HttpServer};
 
 /// A running viewer server. Serving stops when the process exits.
@@ -115,7 +119,11 @@ fn route(
             let initial = requested_book(&entries, query);
             generated(shell::shell_document(&entries, initial), "text/html")
         }
-        ["_grid"] => generated(shell::grid_document(&library(roots, include)), "text/html"),
+        ["_grid"] => {
+            let libs = libraries(roots, include);
+            let missing = missing_titles(&libs, include);
+            generated(shell::grid_document(&libs, &missing), "text/html")
+        }
 
         ["_cover", root, dir] => match resolve(roots, root, dir).and_then(|b| b.cover) {
             Some(cover) => serve_file(&cover),

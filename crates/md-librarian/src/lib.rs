@@ -29,6 +29,12 @@
 //! are searched in order and the **first one wins**, the same rule the yaams
 //! config search path and `USDLITE_ASSET_PATH` already use.
 //!
+//! Each root is also a **library** of its own, named for its directory or by a
+//! [`LIBRARY_FILE`] in it:
+//! [`libraries`] returns the books grouped that way, [`library`] the same books
+//! as one flat list. Shadowing is the same in both — a later root loses only the
+//! titles an earlier one already has.
+//!
 //! # Why identity is the title
 //!
 //! mdbook 0.5 **rejects unknown configuration**: `[book] id = "…"` fails the
@@ -43,8 +49,13 @@
 //! contain spaces and punctuation — so they are never used to build a URL. That
 //! is what [`Book::root_index`] and [`Book::dir_name`] are for.
 
+mod libraries;
+
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+
+use libraries::by_title;
+pub use libraries::{LIBRARY_FILE, Library, libraries, missing_titles};
 
 /// The search-path environment variable: a stacking, `:`-separated list of roots.
 ///
@@ -219,62 +230,28 @@ pub fn default_root() -> PathBuf {
     data.join("md-librarian").join("books")
 }
 
-/// Build the library: discover every root in order, shadow duplicates, apply an
-/// optional include-list, and sort alphabetically by title.
+/// Build the library as one flat list: every root in order, duplicates
+/// shadowed, an optional include-list applied, sorted alphabetically by title.
+///
+/// This is [`libraries`] flattened, plus an [`Entry::Missing`] for each of
+/// [`missing_titles`]; use [`libraries`] when the root a book came from
+/// matters for display.
 ///
 /// `include` is a list of **titles**; `None` means everything. A root that does
 /// not exist is skipped with a log line — not silently (a typo or an unmounted
 /// NFS root should leave a trace) and not fatally (a package that is not
 /// resolved on this machine must not stop the viewer).
 pub fn library(roots: &[PathBuf], include: Option<&[String]>) -> Vec<Entry> {
-    let mut books: Vec<Book> = Vec::new();
-    // Titles claimed by an EARLIER root. Filled after each root is processed, so
-    // that duplicates *within* one root are both kept.
-    let mut claimed: HashSet<String> = HashSet::new();
-
-    for (index, root) in roots.iter().enumerate() {
-        if !root.is_dir() {
-            tracing::info!(root = %root.display(), "book root does not exist; skipping");
-            continue;
-        }
-        let mut in_root = discover_root(root, index);
-        in_root.retain(|b| !claimed.contains(&b.title));
-        for b in &in_root {
-            claimed.insert(b.title.clone());
-        }
-        books.append(&mut in_root);
-    }
-
-    let mut entries: Vec<Entry> = match include {
-        None => books.into_iter().map(Entry::Book).collect(),
-        Some(wanted) => {
-            let set: HashSet<&str> = wanted.iter().map(String::as_str).collect();
-            let mut kept: Vec<Entry> = books
-                .into_iter()
-                .filter(|b| set.contains(b.title.as_str()))
-                .map(Entry::Book)
-                .collect();
-            for title in wanted {
-                if !kept.iter().any(|e| e.title() == title) {
-                    kept.push(Entry::Missing {
-                        title: title.clone(),
-                    });
-                }
-            }
-            kept
-        }
-    };
-
-    // Alphabetical by title. Case-insensitive first so "gpui" and "GPUI" sit
-    // together, with a case-sensitive tiebreak so the order is total (and so the
-    // page is stable between requests, which matters because it is regenerated
-    // on every one).
-    entries.sort_by(|a, b| {
-        a.title()
-            .to_lowercase()
-            .cmp(&b.title().to_lowercase())
-            .then_with(|| a.title().cmp(b.title()))
-    });
+    let libs = libraries(roots, include);
+    let missing = missing_titles(&libs, include);
+    let mut entries: Vec<Entry> = libs
+        .into_iter()
+        .flat_map(|l| l.books)
+        .map(Entry::Book)
+        .chain(missing.into_iter().map(|title| Entry::Missing { title }))
+        .collect();
+    // Stable, so two same-titled books in one root keep their directory order.
+    entries.sort_by(|a, b| by_title(a.title(), b.title()));
     entries
 }
 

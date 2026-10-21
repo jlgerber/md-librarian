@@ -14,6 +14,18 @@ consumers pin.
 
 ### Added
 
+- **One library per root** (#9). Each root on `MD_LIBRARIAN_PATH` (or
+  `--root`) is now its own section of the library page, headed by the root's
+  directory name — or the `name` in a `library.toml` at its top — and its
+  path, in search-path order. A later root still loses a book whose title an
+  earlier root has; a root left with nothing to show is hidden. The rez
+  package's root is named `md-librarian`. New
+  `md_librarian::{Library, libraries, missing_titles, LIBRARY_FILE}`;
+  `library()` keeps its signature. Book URLs are unchanged.
+- **`md_librarian_serve::shell::grid_document`** now takes
+  `(&[Library], &[String])` — the libraries and the include-list titles no
+  root provides. **Breaking** for a direct caller: build both with
+  `libraries()` and `missing_titles()`.
 - **`md-librarian build`.** Runs `mdbook build` on every stale book on the
   search path, or on the book directories given; `--force` rebuilds all,
   `--into <ROOT>` installs a slim copy (`book.toml`, cover, rendered output)
